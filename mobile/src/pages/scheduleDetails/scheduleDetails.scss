@@ -1,0 +1,228 @@
+.container {
+  min-height: 100vh;
+  background: #f5f7fa;
+  padding-bottom: 40rpx;
+}
+
+// 工序信息卡片
+.info-card {
+  position: relative;
+  margin: 24rpx;
+  padding: 24rpx;
+  background: #fff;
+  border-radius: 18rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+
+  .top-line {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 8rpx;
+    background: linear-gradient(90deg, #3ebd97, #66d1b2);
+  }
+
+  .info-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-top: 12rpx;
+    margin-bottom: 24rpx;
+    gap: 12rpx;
+
+    .title-section {
+      flex: 1;
+      min-width: 0;
+
+      .process-name {
+        display: block;
+        font-size: 28rpx;
+        font-weight: 600;
+        color: #1f2937;
+        line-height: 1.4;
+        margin-bottom: 8rpx;
+        word-break: break-word;
+      }
+
+      .equipment-name {
+        display: block;
+        font-size: 24rpx;
+        color: #6b7280;
+        line-height: 1.4;
+      }
+    }
+
+    .status-tag {
+      flex-shrink: 0;
+      padding: 8rpx 16rpx;
+      border-radius: 20rpx;
+      font-size: 22rpx;
+      font-weight: 500;
+      border: 1rpx solid transparent;
+      white-space: nowrap;
+    }
+  }
+
+  // 信息行
+  .info-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 16rpx 0;
+    border-bottom: 1rpx solid #f3f4f6;
+
+    &:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .label {
+      display: block;
+      font-size: 24rpx;
+      color: #9ca3af;
+      font-weight: 500;
+      min-width: 120rpx;
+      flex-shrink: 0;
+    }
+
+    .value {
+      display: block;
+      font-size: 24rpx;
+      color: #374151;
+      text-align: right;
+      flex: 1;
+      word-break: break-all;
+
+      &.description {
+        font-size: 22rpx;
+        line-height: 1.6;
+        color: #6b7280;
+      }
+    }
+  }
+}
+
+// 材料部分
+.materials-section {
+  margin: 24rpx;
+  background: #fff;
+  border-radius: 18rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24rpx;
+    border-bottom: 1rpx solid #f3f4f6;
+
+    .section-title {
+      font-size: 28rpx;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .loading-text {
+      font-size: 22rpx;
+      color: #3ebd97;
+    }
+  }
+
+  .markdown-body {
+    padding: 20rpx;
+    font-size: 28rpx;
+    line-height: 1.8;
+    color: #333;
+  }
+
+  /* 标题样式 */
+  :deep(h2) {
+    font-size: 36rpx;
+    font-weight: bold;
+    margin: 30rpx 0 20rpx;
+    padding-bottom: 10rpx;
+    border-bottom: 1rpx solid #eee;
+  }
+
+  /* 列表样式 */
+  :deep(ol), :deep(ul) {
+    padding-left: 40rpx;
+    margin: 20rpx 0;
+  }
+
+  :deep(li) {
+    margin-bottom: 10rpx;
+  }
+
+  /* 加粗文本样式 */
+  :deep(strong) {
+    color: #007AFF;
+    font-weight: bold;
+  }
+
+  // 空状态
+  .empty-state {
+    padding: 24rpx;
+    text-align: center;
+
+    .empty-text {
+      font-size: 24rpx;
+      color: #9ca3af;
+    }
+  }
+
+}
+
+.action-card {
+  margin: 0 24rpx 12rpx;
+
+  .primary-btn {
+    width: 100%;
+    padding: 18rpx 24rpx;
+    background: linear-gradient(90deg, #3ebd97, #2fae8a);
+    color: #fff;
+    border: none;
+    border-radius: 12rpx;
+    font-size: 28rpx;
+    font-weight: 600;
+    line-height: 1.4;
+
+    &:active {
+      opacity: 0.9;
+    }
+
+    &:disabled {
+      background: #d1d5db;
+      opacity: 0.7;
+    }
+  }
+}
+
+// 响应式设计
+@media (max-width: 375px) {
+  .info-card {
+    margin: 16rpx;
+    padding: 16rpx;
+  }
+
+  .materials-section {
+    margin: 16rpx;
+  }
+
+  .action-card {
+    margin: 0 16rpx 10rpx;
+  }
+
+  .info-row {
+    .label {
+      min-width: 100rpx;
+      font-size: 22rpx;
+    }
+
+    .value {
+      font-size: 22rpx;
+    }
+  }
+}

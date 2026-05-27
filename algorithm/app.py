@@ -26,6 +26,14 @@ from process_router import process_bp
 from panel_router import panel_bp
 from parse_router import parse_blueprint
 from file_router import file_bp     
+
+import datetime
+
+# 兼容性处理：如果没有UTC属性，使用timezone.utc
+if not hasattr(datetime, 'UTC'):
+    datetime.UTC = datetime.timezone.utc
+
+
 app = Flask(__name__)
 CORS(app)  # 允许跨域请求
 app.register_blueprint(equipment_bp)

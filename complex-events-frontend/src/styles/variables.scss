@@ -1,0 +1,16 @@
+:root {
+  --my-system-primary-color: #1776ff;
+  --my-system-primary-color-opacity: #1776FFA1;
+  --my-menu-text-color: #bfcbd9;
+  --my-menu-active-text-color: #409EFF;
+  --my-menu-bg-color: #001528;
+  --my-menu-hover-bg-color: #409EFF;
+  --my-sub-menu-bg-color: #1f2d3d;
+  --my-sub-menu-hover-bg-color: #6dabff;
+  --my-sub-menu-active-text-color: #f4f4f5;
+  --my-menu-active-bg-color: var(--my-system-primary-color);
+  --my-sidebar-width: 220px;
+  --my-tagview-active-bg-color: var(--my-system-primary-color);
+
+  --el-color-primary: var(--my-system-primary-color);
+}

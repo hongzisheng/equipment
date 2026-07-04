@@ -1,0 +1,60 @@
+services:
+  mongodb:
+    image: "mongodb/mongodb-community-server:latest"
+    ports:
+      - "27017:27017"
+    volumes:
+        - mongodb_data:/data  # 添加数据持久化
+    networks:
+      - mynet
+
+  redis:
+    image: "redis:latest"
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - mynet
+
+  neo4j:
+    image: "neo4j:latest"
+    environment:
+      NEO4J_AUTH: neo4j/neo4j-password  # 必须修改
+    ports:
+      - "7474:7474"   # 浏览器访问 Neo4j 的端口
+      - "7687:7687"   # Bolt 协议端口
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - mynet
+
+  mysql:
+    image: "mysql:latest"
+    environment:
+      MYSQL_ROOT_PASSWORD: root  # 必须修改
+      MYSQL_DATABASE: complex_events
+    ports:
+      - "3306:3306"   # 主机通过 3306 访问 MySQL
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - mynet
+
+  flask:
+    image: "myflaskapp"
+    environment:
+      DEEPSEEK_API_KEY: deepseekapikey
+    ports:
+      - "8800:8800"
+    networks:
+     - mynet
+
+volumes:
+  redis_data:
+  neo4j_data:
+  mysql_data:
+  mongodb_data:
+networks:
+  mynet:
+    driver: bridge

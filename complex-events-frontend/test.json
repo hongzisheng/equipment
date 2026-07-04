@@ -1,0 +1,52 @@
+[
+  {
+    "source": "事件",
+    "target": "时间",
+    "type": "发生时间"
+  },
+  {
+    "source": "事件",
+    "target": "地点",
+    "type": "发生地点"
+  },
+  {
+    "source": "事件",
+    "target": "人物",
+    "type": "参与人物"
+  },
+  {
+    "source": "事件",
+    "target": "组织",
+    "type": "参与组织"
+  },
+  {
+    "source": "事件",
+    "target": "行动",
+    "type": "核心行动"
+  },
+  {
+    "source": "人物",
+    "target": "角色",
+    "type": "担任角色"
+  },
+  {
+    "source": "人物",
+    "target": "组织",
+    "type": "所属组织"
+  },
+  {
+    "source": "人物",
+    "target": "行动",
+    "type": "执行行动"
+  },
+  {
+    "source": "组织",
+    "target": "角色",
+    "type": "承担角色"
+  },
+  {
+    "source": "组织",
+    "target": "行动",
+    "type": "发起行动"
+  }
+]

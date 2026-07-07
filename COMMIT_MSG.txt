@@ -1,9 +1,0 @@
-重构 algorithm 后端为 Flask 应用工厂 MVC 结构
-
-- 采用 create_app() 应用工厂模式
-- 分层结构：api(路由) / core(算法) / services(服务) / models(数据) / utils(工具)
-- 15 个 Blueprint 模块化路由，共 65 个接口
-- 统一配置中心 config.py 和数据库工具 utils/db.py
-- 数据文件迁移至 data/，旧 xxx_router.py 重命名为 app/api/xxx.py
-- 入口改为 run.py，原 app.py 内容并入 app/api/workorder.py
-- requirements.txt 补充 beautifulsoup4 依赖

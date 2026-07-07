@@ -4,13 +4,9 @@ import datetime
 from pathlib import Path
 from functools import wraps
 import json
+from app.utils import get_db_path
+from app import core
 process_bp = Blueprint('process', __name__, url_prefix='/api')
-def get_db_path():
-    """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
-    return current_dir / 'database' / 'db.sqlite3'
-
-
 def parse_number(value):
     if value is None:
         return 0
@@ -381,8 +377,7 @@ def add_process_template():
         conn.close()
 
         # 重置调度器以便重新加载数据
-        global scheduler
-        scheduler = None
+        core.reset_scheduler()
 
         return jsonify({
             'success': True,
@@ -506,8 +501,7 @@ def update_process_template(template_id):
         conn.close()
 
         # 重置调度器以便重新加载数据
-        global scheduler
-        scheduler = None
+        core.reset_scheduler()
 
         return jsonify({
             'success': True,
@@ -551,8 +545,7 @@ def delete_process_template(template_id):
         conn.close()
 
         # 重置调度器以便重新加载数据
-        global scheduler
-        scheduler = None
+        core.reset_scheduler()
 
         return jsonify({
             'success': True,
@@ -652,8 +645,7 @@ def batch_import_process_templates():
         conn.close()
 
         # 重置调度器以便重新加载数据
-        global scheduler
-        scheduler = None
+        core.reset_scheduler()
 
         return jsonify({
             'success': True,

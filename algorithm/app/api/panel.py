@@ -4,12 +4,9 @@ import datetime
 from pathlib import Path
 from functools import wraps
 import json
-import core
+from app import core
+from app.utils import get_db_path
 panel_bp = Blueprint('panel', __name__, url_prefix='/api')
-def get_db_path():
-    """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
-    return current_dir / 'database' / 'db.sqlite3'
 
 # ----------信息面板相关------------------
 def parse_time(time_str):
@@ -247,7 +244,7 @@ def get_material_inventory():
                 'message': '调度器未初始化，请先执行调度'
             }), 400
         # 从数据库加载初始物料库存
-        from models import DatabaseManager
+        from app.models import DatabaseManager
         db_path = get_db_path()
         materials_data = DatabaseManager.load_materials_from_db(str(db_path))
 

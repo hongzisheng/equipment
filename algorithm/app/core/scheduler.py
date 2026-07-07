@@ -1,13 +1,13 @@
 import sqlite3
 import datetime
 import math
-from models import DatabaseManager, EquipmentType, Worker, Process, Equipment,ProcessTemplate
+from app.models import DatabaseManager, EquipmentType, Worker, Process, Equipment, ProcessTemplate
 from pathlib import Path
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
-from scheduler_interface import IScheduler
+from app.core.interface import IScheduler
 import json
-from utils import get_db_path
+from app.utils import get_db_path
 class Task:
     def __init__(self, id, name, duration, start_time, end_time, dependencies=None):
         self.id = id
@@ -99,7 +99,7 @@ class Scheduler(IScheduler):
         return insufficient_resources
     def set_algorithm(self, algorithm_name, **kwargs):
         """设置调度算法"""
-        from scheduler_algorithms import (
+        from app.core.algorithms import (
             ShortestProcessingTimeScheduler, 
             TopologicalScheduler, 
             GreedyScheduler, 
@@ -786,7 +786,7 @@ class Scheduler(IScheduler):
                 })
 
             # 为每个设备创建 Equipment 和 Process 实例
-            from core import Equipment, Process
+            from app.core.scheduler import Equipment, Process
             for eq_id, data in equipment_tasks.items():
                 equipment_type_id = str(data['equipment_type_id'])
                 if eq_id not in [e.id for e in self.equipments]:
@@ -928,6 +928,12 @@ def get_scheduler():
     if _scheduler is None:
         init_scheduler()
     return _scheduler
+
+
+def reset_scheduler():
+    """重置调度器单例，使下次访问时重新加载数据"""
+    global _scheduler
+    _scheduler = None
 
 def run_scheduling(work_order_ids, algorithm_name="topological"):
     """供 app.py 调用的顶层调度函数"""

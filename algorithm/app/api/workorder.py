@@ -1,535 +1,32 @@
+"""工单与工单任务路由
+
+从原 app.py 抽取，包含工单列表、任务 CRUD、状态流转、审批、
+附件上传与智能建议等接口。
+"""
 import datetime
 import json
-import os
 import sqlite3
 import traceback
 from json import JSONDecodeError
-from pathlib import Path
-import jwt
-from dotenv import load_dotenv
-from flask import Flask, jsonify, request
-from flask import send_from_directory
-from flask_cors import CORS
-from werkzeug.security import generate_password_hash, check_password_hash
-import core
-import models
-from jwt_decorated import token_required
-from utils import get_db_path, get_db_connection
-load_dotenv()
-from openai import OpenAI
-from wx_router import wx_blueprint
-from equipment_router import equipment_bp
-from worker_router import worker_bp
-from maintenance_router import maintenance_bp
-from materials_router import materials_bp
-from process_router import process_bp
-from panel_router import panel_bp
-from parse_router import parse_blueprint
-from file_router import file_bp     
 
-import datetime
+from flask import Blueprint, jsonify, request
+from werkzeug.utils import secure_filename
 
-# 兼容性处理：如果没有UTC属性，使用timezone.utc
-if not hasattr(datetime, 'UTC'):
-    datetime.UTC = datetime.timezone.utc
+from app import core
+from app.config import Config
+from app.constants import TASK_STATUS, STATUS_TRANSITIONS
+from app.extensions import get_openai_client
+from app.utils import get_db_path
+from app.utils.auth import token_required
+
+workorder_bp = Blueprint('workorder', __name__, url_prefix='/api')
 
 
-app = Flask(__name__)
-CORS(app)  # 允许跨域请求
-app.register_blueprint(equipment_bp)
-app.register_blueprint(worker_bp)
-app.register_blueprint(maintenance_bp)
-app.register_blueprint(materials_bp)
-app.register_blueprint(wx_blueprint)
-app.register_blueprint(process_bp)
-app.register_blueprint(panel_bp)
-app.register_blueprint(parse_blueprint)
-app.register_blueprint(file_bp)
-# ----------系统相关------------------
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')  # 生产环境请使用强密钥
-# ----------智能问答------------------
-client = OpenAI(
-    api_key=os.environ.get('DASHSCOPE_API_KEY'),
-    base_url=os.environ.get('DASHSCOPE_API_URL'),)
-# ----------工单任务状态常量------------------#
-TASK_STATUS = {
-    'RELEASED': 'released',  # 待开始
-    'APPLY_START': 'apply_for_start',  # 申请开工
-    'ENG_APPROVED': 'eng_approved',  # 工程师确认
-    'CONSTRUCTION_CONFIRMED': 'construction_confirmed',  # 施工确认
-    'TEAM_RECEIVED': 'team_received',  # 班组受理
-    'CONSTRUCTION_SIGNED': 'construction_signed',  # 施工回签
-    'PROCESS_CLOSED': 'process_closed',  # 工艺存储关闭
-    'EQUIPMENT_CLOSED': 'equipment_closed',  # 设备部关闭
-    'CANCELLED': 'cancelled'  # 取消
-}
-# 状态转换权限映
-# 格式: 当前状态 -> { 目标状态: [允许的角色列表] }
-STATUS_TRANSITIONS = {
-    TASK_STATUS['RELEASED']: {
-        TASK_STATUS['APPLY_START']: ['worker']  # 工人可提交开工申请
-    },
-    TASK_STATUS['APPLY_START']: {
-        TASK_STATUS['ENG_APPROVED']: ['admin']  # 工艺/储运工程师确认
-    },
-    TASK_STATUS['ENG_APPROVED']: {
-        TASK_STATUS['CONSTRUCTION_CONFIRMED']: ['admin']  # 施工负责人确认
-    },
-    TASK_STATUS['CONSTRUCTION_CONFIRMED']: {
-        TASK_STATUS['TEAM_RECEIVED']: ['admin']  # 班组长接收
-    },
-    TASK_STATUS['TEAM_RECEIVED']: {
-        TASK_STATUS['CONSTRUCTION_SIGNED']: ['worker']  # 工人施工回签
-    },
-    TASK_STATUS['CONSTRUCTION_SIGNED']: {
-        TASK_STATUS['PROCESS_CLOSED']: ['admin']  # 工艺工程师关闭
-    },
-    TASK_STATUS['PROCESS_CLOSED']: {
-        TASK_STATUS['EQUIPMENT_CLOSED']: ['admin']  # 设备部关闭
-    }
-}
-
-# ===================== 新增：知识树相关API =====================
-@app.route('/api/graph-relations-archive', methods=['GET'])
-def get_graph_relations_archive():
-    """获取所有图关系数据（包含实体名称）"""
-    try:
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        # 查询关系数据并关联获取源和目标实体的名称
-        cursor.execute('''
-        SELECT 
-            r.id,
-            r.source_type,
-            r.source_id,
-            r.relation_type,
-            r.target_type,
-            r.target_id,
-            json_extract(s.attributes, '$.名称') AS source_name,
-            json_extract(t.attributes, '$.名称') AS target_name
-        FROM graph_relations_archive r
-        LEFT JOIN graph_nodes_archive s ON r.source_id = s.entity_id
-        LEFT JOIN graph_nodes_archive t ON r.target_id = t.entity_id
-        ORDER BY r.id
-        ''')
-        
-        relations = []
-        for row in cursor.fetchall():
-            relations.append({
-                'id': row['id'],
-                'source_type': row['source_type'],
-                'source_id': row['source_id'],
-                'relation_type': row['relation_type'],
-                'target_type': row['target_type'],
-                'target_id': row['target_id'],
-                'source_name': row['source_name'],
-                'target_name': row['target_name']
-            })
-        
-        conn.close()
-        return jsonify({
-            'success': True,
-            'data': relations
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/equipment-categories', methods=['GET'])
-def get_equipment_categories():
-    """获取设备分类列表"""
-    try:
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT id, name FROM equipment_category ORDER BY id')
-        categories = []
-        for row in cursor.fetchall():
-            categories.append({
-                'id': str(row['id']),
-                'name': row['name']
-            })
-        
-        conn.close()
-        return jsonify({
-            'success': True,
-            'data': categories
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/equipment-types-with-category', methods=['GET'])
-def get_equipment_types_with_category():
-    """获取带分类的设备类型列表"""
-    try:
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-        SELECT et.id, et.name, ec.name as category
-        FROM equipment_types et
-        LEFT JOIN equipment_category ec ON et.category_id = ec.id
-        ORDER BY ec.id, et.id
-        ''')
-        
-        types = []
-        for row in cursor.fetchall():
-            types.append({
-                'id': str(row['id']),
-                'name': row['name'],
-                'category': row['category'] or '未分类'
-            })
-        
-        conn.close()
-        return jsonify({
-            'success': True,
-            'data': types
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-# ===================== 知识树API结束 =====================
-
-@app.route('/api/register', methods=['POST'])
-def register():
-    """用户注册"""
-    try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        email = data.get('email')
-        role = data.get('role')
-        phone = data.get('phone')
-        company_id = data.get('company_id')
-        real_name = data.get('real_name')
-        if not all([username, password, email, phone, real_name]):
-            return jsonify({
-                'success': False,
-                'message': '用户名、密码、手机号和邮箱不能为空'
-            }), 400
-        # 连接到数据库
-        conn = get_db_connection()
-        c = conn.cursor()
-        # 检查用户是否已存在
-        c.execute('SELECT id FROM users WHERE username = ? OR email = ?', (username, email))
-        if c.fetchone():
-            conn.close()
-            return jsonify({
-                'success': False,
-                'message': '用户名或邮箱已存在'
-            }), 400
-        # 创建用户
-        password_hash = generate_password_hash(password)
-        c.execute('''
-                  INSERT INTO users (username, password, email, created_time, role, phone, company_id, real_name)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                  ''', (username, password_hash, email, datetime.datetime.now(), role, phone, company_id, real_name))
-        user_id = c.lastrowid
-        conn.commit()
-        conn.close()
-        return jsonify({
-            'success': True,
-            'message': '注册成功',
-            'user_id': user_id
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'message': '注册失败'
-        }), 500
-@app.route('/api/login', methods=['POST'])
-def login():
-    """用户登录"""
-    try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        if not username or not password:
-            return jsonify({
-                'success': False,
-                'message': '用户名和密码不能为空'
-            }), 400
-        # 连接到数据库
-        db_path = get_db_path()
-        conn = sqlite3.connect(str(db_path))
-        c = conn.cursor()
-        # 查询用户
-        c.execute('''
-                  SELECT id,
-                         username,
-                         password,
-                         email,
-                         role,
-                         phone,
-                         company_id,
-                         real_name,
-                         emp_id
-                  FROM users
-                  WHERE username = ?
-                     OR email = ?
-                  ''', (username, username))
-        user = c.fetchone()
-        if not user or not check_password_hash(user[2], password):
-            return jsonify({
-                'success': False,
-                'message': '用户名或密码错误'
-            }), 401
-        # 生成JWT token
-        exp_seconds = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', '3600'))
-        token_payload = {
-            'user_id': user[0],
-            'username': user[1],
-            'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=exp_seconds)
-        }
-        token = jwt.encode(token_payload, os.getenv('JWT_SECRET_KEY'), algorithm='HS256')
-        user_info = {
-            'id': user[0],
-            'username': user[1],
-            'email': user[3],
-            'role': user[4],
-            'phone': user[5],
-            'company_id': user[6],
-            'real_name': user[7],
-            'emp_id': user[8]  # 添加 emp_id
-        }
-        # 如果用户角色是工人，从 workers 表查询 worker_id
-        worker_id = None
-        if user[4] == 'worker':
-            # 假设 workers 表有 emp_id 字段，且与 users.emp_id 对应
-            c.execute('SELECT id FROM workers WHERE emp_id = ?', (user[8],))
-            row = c.fetchone()
-            if row:
-                worker_id = row[0]
-            else:
-                # 可选：如果 workers 表没有对应记录，记录日志
-                print(f"警告：用户 {username} (emp_id={user[8]}) 在 workers 表中无对应记录")
-        user_info['worker_id'] = worker_id
-        conn.close()
-        return jsonify({
-            'success': True,
-            'message': '登录成功',
-            'token': token,
-            'user': user_info
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'message': '登录失败'
-        }), 500
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    try:
-        # 获取前端发送的JSON数据
-        data = request.get_json()
-        if not data or 'message' not in data:
-            return jsonify({
-                'success': False,
-                'error': '缺少message参数'
-            }), 400
-        user_message = data['message']
-        include_rules = data.get('rule', 0)
-        include_plan = data.get('plan', 0)
-        include_selected_workers = data.get('selected_workers', 0)
-        include_maintenance_tools = data.get('maintenance_tools', 0)
-        system_message = """你是一个化工智能调度项目的助手。项目背景如下：
-        1. 这是一个化工设备维修调度系统，所有调度时间单位均为天
-        2. 系统管理各种化工设备（反应釜、离心机、干燥机等）的维修工序
-        3. 涉及设备类型、工序模板、工人调度、物料管理、维修器具调配
-        4. 系统支持拓扑排序、贪心算法、遗传算法等多种调度算法
-        5. 调度考虑工人技能、设备可用性、工序依赖关系
-        
-        你的任务是帮助用户解决与化工设备调度、维修安排、资源配置相关的问题。
-        请以专业、准确的方式回答用户的疑问。"""
-        # 调用DeepSeek API
-        context_info = []
-        if include_rules == 1:
-            try:
-                rules = AppDataManager.get_all_process_templates()
-                if rules:
-                    context_info.append("工序信息：")
-                    context_info.append(json.dumps(rules, ensure_ascii=False, indent=2))
-            except Exception as e:
-                print(f"获取工序信息失败: {str(e)}")
-        if include_plan == 1:
-            try:
-                db_path = get_db_path()
-                conn = sqlite3.connect(str(db_path))
-                c = conn.cursor()
-                # 1. 获取所有调度任务
-                c.execute('''
-                        SELECT schedule_id,
-                                process_id,
-                                process_name,
-                                equipment_id,
-                                equipment_name,
-                                start_time,
-                                end_time,
-                                workers,
-                                predecessors
-                        FROM schedule_tasks
-                        ''')
-                schedule_tasks = c.fetchall()               
-                context_info.append("调度方案：")
-                context_info.append(json.dumps(schedule_tasks, ensure_ascii=False, indent=2))
-            except Exception as e:
-                print(f"获取调度方案失败: {str(e)}")
-        if include_selected_workers == 1:
-            selected_workers = AppDataManager.get_selected_workers()
-            if selected_workers:
-                context_info.append("工人信息：")
-                context_info.append(json.dumps(selected_workers, ensure_ascii=False, indent=2))
-        if include_maintenance_tools == 1:
-            try:
-                maintenance_tools = AppDataManager.get_maintenance_tools()
-                if maintenance_tools:
-                    context_info.append("维修器具：")
-                    context_info.append(json.dumps(maintenance_tools, ensure_ascii=False, indent=2))
-            except Exception as e:
-                print(f"获取维修器具失败: {str(e)}")
-        if context_info:
-            system_message += "\n\n当前系统上下文:\n" + "\n".join(context_info)
-        response = client.chat.completions.create(
-            model="qwen-flash",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message},
-            ],
-        )
-        # 提取回复内容
-        reply = response.choices[0].message.content
-        # 返回结果给前端
-        return jsonify({
-            'success': True,
-            'reply': reply,
-            'usage': {
-                'total_tokens': response.usage.total_tokens,
-                'prompt_tokens': response.usage.prompt_tokens,
-                'completion_tokens': response.usage.completion_tokens
-            } if response.usage else None
-        })
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"Chat API Error: {str(e)}")
-        print(f"Error Details: {error_details}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'message': '聊天功能出错',
-            'error_details': error_details  # 开发环境下可返回，生产环境应移除
-        }), 500
-class AppDataManager:
-    """应用数据管理器，复用models.py中的接口"""
-    @staticmethod
-    def get_equipment_types():
-        """获取所有设备类型"""
-        db_path = get_db_path()
-        return models.DatabaseManager.load_equipment_types_from_db(str(db_path))
-    @staticmethod
-    def get_equipment_instances():
-        """获取所有设备实例"""
-        db_path = get_db_path()
-        return models.load_equipment_instances(str(db_path))
-    @staticmethod
-    def get_workers():
-        """获取所有工人"""
-        current_dir = Path(__file__).parent
-        db_path = current_dir.parent / 'database' / 'db.sqlite3'
-        return models.load_workers(str(db_path))
-    @staticmethod
-    def get_materials():
-        """获取所有材料"""
-        db_path = get_db_path()
-        return models.load_materials(str(db_path))
-    @staticmethod
-    def get_maintenance_tools():
-        """获取所有维修器具"""
-        db_path = get_db_path()
-        return models.load_maintenance_tools(str(db_path))
-    @staticmethod
-    def get_all_process_templates():
-        """获取所有工序模板"""
-        db_path = get_db_path()
-        return models.DatabaseManager.load_process_templates_from_db(str(db_path))
-    @staticmethod
-    def get_selected_workers():
-        """获取所有选择的工人"""
-        db_path = get_db_path()
-        return models.DatabaseManager.load_selected_workers_from_db(str(db_path))
-    @staticmethod
-    def get_selected_equipment_instances():
-        """获取所有选择的设备实例"""
-        db_path = get_db_path()
-        return models.DatabaseManager.load_selected_equipment_instances_from_db(str(db_path))
-# 全局调度器实例
-# ----------调度相关------------------
-scheduler = None
-"""执行调度算法"""
-@app.route('/api/run-scheduler', methods=['POST'])
-def run_scheduler():
-    try:
-        data = request.get_json()
-        work_order_ids = data.get('work_order_ids', [])
-        algorithm_name = data.get('algorithm', 'topological')
-        if not work_order_ids:
-            return jsonify({'success': False, 'message': '请至少选择一个工单进行调度'}), 400
-        formatted_plan, statistics, success, message = core.run_scheduling(work_order_ids, algorithm_name)
-        if not success:
-            # 处理错误信息（可能是字符串或字典）
-            if isinstance(message, dict) and message.get('error_type') == 'insufficient_workers':
-                return jsonify({
-                    'success': False,
-                    'error_type': 'insufficient_workers',
-                    'message': '工人资源不足，无法开始调度',
-                    'error_details': message.get('details', [])
-                }), 400
-            else:
-                return jsonify({'success': False, 'message': str(message)}), 400
-        worker_pool_data = {}
-        try:
-            # 获取全局调度器实例（由 core.run_scheduling 内部创建并存储）
-            global scheduler
-            scheduler = core.get_scheduler()  # 假设 core 提供了此方法
-            if scheduler:
-                worker_pool_data = scheduler.get_worker_pool()
-        except Exception as e:
-            # 工人池获取失败不应影响调度结果的返回，可记录日志
-            print(f"获取工人池失败: {e}")
-        return jsonify({
-            'success': True,
-            'algorithm': algorithm_name,
-            'schedule_plan': formatted_plan,
-            'statistics': statistics,
-            'worker_pool': worker_pool_data
-        })
-    except Exception as e:
-        traceback.print_exc()  # 打印到控制台
-        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
-# 在 chat 函数内部：
-scheduler = core.get_scheduler()
-if scheduler:
-    plan = scheduler.schedule_plan  # 或重新调度
 # ----------工单相关------------------
-"""添加工单"""
 def generate_work_orders_from_selected():
+    """根据已选设备生成工单（辅助函数）"""
     conn = None
-    global scheduler
+    scheduler = core.get_scheduler()
     try:
         db_path = get_db_path()
         conn = sqlite3.connect(str(db_path))
@@ -643,8 +140,10 @@ def generate_work_orders_from_selected():
     finally:
         if conn:
             conn.close()
+
+
 """获取所有工单列表"""
-@app.route('/api/work-orders', methods=['GET'])
+@workorder_bp.route('/work-orders', methods=['GET'])
 def get_work_orders():
     try:
         db_path = get_db_path()
@@ -696,8 +195,10 @@ def get_work_orders():
             'error': str(e),
             'message': '获取工单列表失败'
         }), 500
+
+
 """获取所有工单任务列表"""
-@app.route('/api/work-order-tasks', methods=['GET'])
+@workorder_bp.route('/work-order-tasks', methods=['GET'])
 def get_work_order_tasks():
     try:
         db_path = get_db_path()
@@ -766,8 +267,10 @@ def get_work_order_tasks():
             'error': str(e),
             'message': '获取工单任务列表失败'
         }), 500
+
+
 """手动创建工单：选择设备实例和多个工序模板，校验前置依赖"""
-@app.route('/api/manual-create-work-order', methods=['POST'])
+@workorder_bp.route('/manual-create-work-order', methods=['POST'])
 @token_required
 def manual_create_work_order():
     try:
@@ -921,8 +424,10 @@ def manual_create_work_order():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e), 'message': '创建工单失败'}), 500
+
+
 """工人与工单关联"""
-@app.route('/api/assign-workers-from-schedule', methods=['POST'])
+@workorder_bp.route('/assign-workers-from-schedule', methods=['POST'])
 @token_required
 def assign_workers_from_schedule():
     conn = None
@@ -1033,8 +538,10 @@ def assign_workers_from_schedule():
     finally:
         if conn:
             conn.close()
+
+
 """获取工人工单信息"""
-@app.route('/api/worker-workorders/<int:worker_id>', methods=['GET'])
+@workorder_bp.route('/worker-workorders/<int:worker_id>', methods=['GET'])
 def get_worker_workorders(worker_id):
     try:
         db_path = get_db_path()
@@ -1099,8 +606,10 @@ def get_worker_workorders(worker_id):
             'error': str(e),
             'message': '获取工人工单失败'
         }), 500
+
+
 """更新工单任务状态并上传附件（工人）"""
-@app.route('/api/work-order-tasks/<int:task_id>/update-status', methods=['PUT', 'POST'])
+@workorder_bp.route('/work-order-tasks/<int:task_id>/update-status', methods=['PUT', 'POST'])
 @token_required  # 需要登录，但所有认证用户（工人）都可访问
 def update_work_order_task_status(task_id):
     state_order = [
@@ -1203,10 +712,9 @@ def update_work_order_task_status(task_id):
                 allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
                 if '.' in photo_file.filename and photo_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
                     # 生成安全的文件名并保存
-                    from werkzeug.utils import secure_filename
                     filename = secure_filename(photo_file.filename)
                     # 创建按任务ID组织的目录
-                    upload_dir = Path(__file__).parent / 'uploads' / 'work_order_photos' / str(task_id)
+                    upload_dir = Config.UPLOAD_DIR / 'work_order_photos' / str(task_id)
                     upload_dir.mkdir(parents=True, exist_ok=True)
                     # 生成唯一文件名，避免覆盖
                     unique_filename = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
@@ -1300,7 +808,9 @@ def update_work_order_task_status(task_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e), 'message': '更新工单任务状态失败'}), 500
-@app.route('/api/worker/<int:worker_id>/history', methods=['GET'])
+
+
+@workorder_bp.route('/worker/<int:worker_id>/history', methods=['GET'])
 @token_required
 def get_worker_history(worker_id):
     """获取指定工人的所有操作历史（按时间倒序）"""
@@ -1339,9 +849,11 @@ def get_worker_history(worker_id):
             'error': str(e),
             'message': '获取工人历史失败'
         }), 500
+
+
 # ----------工单任务审批（管理层）------------------
 """审批工单任务（管理层）"""
-@app.route('/api/work-order-tasks/<int:task_id>/approve', methods=['PUT'])
+@workorder_bp.route('/work-order-tasks/<int:task_id>/approve', methods=['PUT'])
 @token_required  # 需要登录
 def approve_work_order_task(task_id):
     try:
@@ -1408,9 +920,11 @@ def approve_work_order_task(task_id):
             'error': str(e),
             'message': '工单任务审批失败'
         }), 500
+
+
 # ----------获取工单任务附件（管理层/工人查看）------------------
 """获取工单任务的附件信息（例如照片路径）"""
-@app.route('/api/work-order-tasks/<int:task_id>/attachments', methods=['GET'])
+@workorder_bp.route('/work-order-tasks/<int:task_id>/attachments', methods=['GET'])
 @token_required
 def get_task_attachments(task_id):
     try:
@@ -1439,7 +953,9 @@ def get_task_attachments(task_id):
             'error': str(e),
             'message': '获取附件信息失败'
         }), 500
-@app.route('/api/work-order-tasks/<int:task_id>/suggestions', methods=['GET'])
+
+
+@workorder_bp.route('/work-order-tasks/<int:task_id>/suggestions', methods=['GET'])
 @token_required
 def get_task_suggestions(task_id):
     """
@@ -1470,14 +986,15 @@ def get_task_suggestions(task_id):
         2) 两个字段值都必须是字符串（markdown 文本）
         3) JSON 必须合法：键和字符串都用双引号
         4) 如果内容里需要反斜杠，必须写成 \\\\
-        
+
         示例：
         {
           "materials": "- 材料A\\n- 材料B",
           "guide": "1. 步骤一\\n2. 步骤二\\n\\n\\n**注意事项**：..."
         }
-        
+
         """
+        client = get_openai_client()
         response = client.chat.completions.create(
             model="qwen-flash",
             messages=[
@@ -1516,10 +1033,3 @@ def get_task_suggestions(task_id):
             'error': str(e),
             'message': '获取失败'
         }), 500
-@app.route('/uploads/<path:filename>')
-def uploaded_file(filename):
-    # 安全地构建上传文件夹的绝对路径
-    upload_folder = Path(__file__).parent / 'uploads'
-    return send_from_directory(str(upload_folder), filename)
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)

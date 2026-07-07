@@ -3,14 +3,10 @@ import sqlite3
 import datetime
 from pathlib import Path
 from functools import wraps
+from app.utils import get_db_path
+from app import core
 
 worker_bp = Blueprint('worker', __name__, url_prefix='/api')
-
-
-def get_db_path():
-    """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
-    return current_dir / 'database' / 'db.sqlite3'
 
 
 # ----------工人相关------------------
@@ -143,8 +139,7 @@ def select_workers():
         conn.commit()
         conn.close()
 
-        global scheduler
-        scheduler = None   # 重置调度器以便重新加载数据
+        core.reset_scheduler()
 
         return jsonify({
             'success': True,
@@ -298,8 +293,7 @@ def batch_import_workers():
         conn.commit()
         conn.close()
 
-        global scheduler
-        scheduler = None   # 重置调度器以便重新加载数据
+        core.reset_scheduler()
 
         return jsonify({
             'success': True,
@@ -344,8 +338,7 @@ def delete_worker(worker_id):
         conn.commit()
         conn.close()
 
-        global scheduler
-        scheduler = None   # 重置调度器以便重新加载数据
+        core.reset_scheduler()
 
         return jsonify({
             'success': True,

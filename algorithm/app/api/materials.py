@@ -2,11 +2,8 @@ from flask import Blueprint, jsonify, request
 import sqlite3
 import datetime
 from pathlib import Path
+from app.utils import get_db_path
 materials_bp = Blueprint('materials', __name__, url_prefix='/api')
-def get_db_path():
-    """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
-    return current_dir / 'database' / 'db.sqlite3'
 #----------材料相关------------------
 """获取所有材料"""
 @materials_bp.route('/materials', methods=['GET'])

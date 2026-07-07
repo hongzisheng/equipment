@@ -1,12 +1,18 @@
-import os
+"""JWT 认证装饰器
+
+从原 jwt_decorated.py 迁移而来。校验 Authorization 头并
+将 current_user_id / current_user_role 注入请求上下文。
+"""
 from functools import wraps
 
 import jwt
 from flask import request, jsonify
 
-from utils import get_db_connection
+from app.config import Config
+from app.utils.db import get_db_connection
 
-JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+JWT_SECRET_KEY = Config.JWT_SECRET_KEY
+
 
 def token_required(f):
     """JWT认证装饰器"""

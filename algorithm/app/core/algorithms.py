@@ -2,7 +2,7 @@
 import math
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
-from scheduler_interface import IScheduler
+from app.core.interface import IScheduler
 class TopologicalScheduler:
     def __init__(self, scheduler: IScheduler):
         self.scheduler = scheduler

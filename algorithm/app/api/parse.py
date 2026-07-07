@@ -6,15 +6,14 @@ import zipfile
 from pypdf import PdfReader, PdfWriter
 
 import requests
-from flask import Blueprint, Flask, jsonify, request
+from flask import Blueprint, jsonify, request
 
-from quota_extract_service import extract_and_import_from_markdown, query_quotas
+from app.services.quota_extract import extract_and_import_from_markdown, query_quotas
 import sqlite3
 import json
-from utils import get_db_path
+from app.utils import get_db_path
 
 parse_blueprint = Blueprint('parse', __name__)
-app = Flask(__name__)
 
 TOKEN = os.getenv('MINERU_API_TOKEN', 'eyJ0eXBlIjoiSldUIiwiYWxnIjoiSFM1MTIifQ.eyJqdGkiOiI5MTcwMDcyNiIsInJvbCI6IlJPTEVfUkVHSVNURVIiLCJpc3MiOiJPcGVuWExhYiIsImlhdCI6MTc3ODMxNjA2MiwiY2xpZW50SWQiOiJsa3pkeDU3bnZ5MjJqa3BxOXgydyIsInBob25lIjoiIiwib3BlbklkIjpudWxsLCJ1dWlkIjoiZDFiN2UyNjUtODQ3My00NzJjLTg5ZTEtMzExNzRjOGU2ODg5IiwiZW1haWwiOiIiLCJleHAiOjE3ODYwOTIwNjJ9._GWtY3lxRj4VDFm8KlZAt9M8Mi8oR_vaTx1_hDX3ygPli2Ig5OnuRj-SzQ7kulywZ2Jg9M-wTV2sshKgo5N32A')
 # 标准解析 API：先申请上传链接，再上传文件，最后轮询结果。
@@ -281,6 +280,3 @@ def update_quota():
 		return jsonify({'ok': False, 'error': str(e)}), 500
 	finally:
 		conn.close()
-
-
-app.register_blueprint(parse_blueprint)

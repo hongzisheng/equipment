@@ -6,8 +6,8 @@ import jwt
 import requests
 from flask import Blueprint, request, jsonify
 
-from jwt_decorated import token_required
-from utils import get_db_connection
+from app.utils.auth import token_required
+from app.utils import get_db_connection
 
 wx_blueprint = Blueprint('wx', __name__, url_prefix='/api/wx')
 

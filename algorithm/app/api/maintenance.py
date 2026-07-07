@@ -3,13 +3,10 @@ import sqlite3
 import datetime
 from pathlib import Path
 from functools import wraps
+from app.utils import get_db_path
 maintenance_bp = Blueprint('maintenance', __name__, url_prefix='/api')
 
 
-def get_db_path():
-    """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
-    return current_dir / 'database' / 'db.sqlite3'
 """获取所有维修器具"""
 @maintenance_bp.route('/maintenance-tools', methods=['GET'])
 def get_maintenance_tools():

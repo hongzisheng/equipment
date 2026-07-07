@@ -6,8 +6,8 @@ from pathlib import Path
 
 file_bp = Blueprint('file', __name__, url_prefix='/api')
 
-BASE_DIR = Path(__file__).parent.parent
-UPLOAD_FOLDER = BASE_DIR / 'uploads'
+from app.config import Config
+UPLOAD_FOLDER = Config.UPLOAD_DIR
 ALLOWED_EXTENSIONS = {'pdf'}
 
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)

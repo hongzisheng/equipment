@@ -142,7 +142,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/dispatch/worker',
         name: '工人',
-        component: EmptyPage,
+        component: () => import('@/views/SchedulingDataManagement/worker.vue'),
         meta: { title: '工人' },
       },
       {

@@ -109,7 +109,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/rules/library',
         name: '规则库',
-        component: EmptyPage,
+        component: () => import('@/views/RuleManagement/RuleBase.vue'),
         meta: { title: '规则库' },
       },
       {

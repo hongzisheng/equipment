@@ -1,0 +1,38 @@
+@font-face {
+  font-family: "iconfont"; /* Project id 5036839 */
+  src: url('./iconfont.woff2') format('woff2'),
+       url('./iconfont.woff') format('woff'),
+       url('./iconfont.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: auto;
+}
+
+.iconfont {
+  font-family: "iconfont" !important;
+  font-size: 16px;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 石化设备大检修调度系统图标 - 使用通用图标 */
+.icon-shebeiguanli:before {
+  content: "\e600";
+}
+
+.icon-gongrenguanli:before {
+  content: "\e601";
+}
+
+.icon-bukongrenwuguanli:before {
+  content: "\e602";
+}
+
+.icon-gantt:before {
+  content: "\e603";
+}
+
+.icon-alg:before {
+  content: "\e604";
+}

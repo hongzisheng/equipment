@@ -25,19 +25,12 @@
 - `UPLOAD_FOLDER`: 上传文件保存目录
 - `SUB_GRAPH_PATH`: 子图文件保存目录
 - `LOG_DIR`: 日志目录
-- `MONGODB_HOST`: MongoDB-主机
-- `MONGODB_PORT`: MongoDB-端口
-- `MONGODB_USER`: MongoDB-用户名
-- `MONGODB_PASSWORD`: MongoDB-密码
-- `MONGODB_DATABASE`: MongoDB-数据库名
-- `MONGODB_REPORTS_COLLECTION`: MongoDB-上传文件元数据集合名
-- `MONGODB_EXTRACT_RESULT_COLLECTION`: MongoDB-事件列表集合名
-- `MONGODB_EVENT_LINK_COLLECTION`: MongoDB-事件关联集合名
-- `MONGODB_SUB_GRAPH_COLLECTION`: MongoDB-子图集合名
-- `MONGODB_EVENT_LINK_RULES_COLLECTION`: MongoDB-事件关联规则集合名
-- `NEO4J_URI`: Neo4j-连接地址
-- `NEO4J_USER`: Neo4j-用户名
-- `NEO4J_PASSWORD`: Neo4j-密码
+- `SQLITE_DB_PATH`: SQLite 数据库文件路径，默认 `database/db.sqlite3`
+- `SQLITE_REPORTS_COLLECTION`: 本地文档集合名，默认 `reports`
+- `SQLITE_EXTRACT_RESULT_COLLECTION`: 本地文档集合名，默认 `extract_results`
+- `SQLITE_EVENT_LINK_COLLECTION`: 本地文档集合名，默认 `event_links`
+- `SQLITE_SUB_GRAPH_COLLECTION`: 本地文档集合名，默认 `sub_graph`
+- `SQLITE_EVENT_LINK_RULES_COLLECTION`: 本地文档集合名，默认 `event_link_rules`
 
 ## 运行
 

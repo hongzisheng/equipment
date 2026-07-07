@@ -1,10 +1,12 @@
 <template>
-  <div class="menu-bar">
-    <MenuBar />
-  </div>
+  <div class="layout-container">
+    <aside class="sidebar">
+      <MenuBar />
+    </aside>
 
-  <div class="main-container">
-    <RouterView />
+    <main class="main-container">
+      <RouterView />
+    </main>
   </div>
 </template>
 
@@ -13,12 +15,23 @@ import MenuBar from '@/layout/components/MenuBar/index.vue'
 </script>
 
 <style lang="scss" scoped>
-.menu-bar {
-  height: 5vh;
+.layout-container {
+  display: flex;
+  min-height: 100vh;
 }
 
-.main-container {
-  height: 94vh;
-  padding-top: 1vh;
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  background-color: var(--my-menu-bg-color, #001528);
+  color: var(--my-menu-text-color, #bfcbd9);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+    overflow-y: auto;
+  background: var(--my-page-bg-color, #f0f2f5);
+}
+
+.el-menu {
+  height: 100%;
+  border: none;
 }
 </style>

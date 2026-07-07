@@ -3,7 +3,7 @@
     <el-form ref="loginFormRef" :model="loginForm" :rules="loginRules" class="login-form" autocomplete="on" label-position="left">
 
       <div class="title-container">
-        <h3 class="title">欢迎使用复杂事件系统</h3>
+        <h3 class="title">欢迎使用设备调度系统</h3>
       </div>
 
       <el-form-item prop="username">
@@ -151,135 +151,122 @@ export default {
 }
 </script>
 
-
-<style lang="scss">
-/* 修复input 背景不协调 和光标变色 */
-/* Detail see https://github.com/PanJiaChen/vue-element-admin/pull/927 */
-
-$bg:#283443;
-$light_gray:#fff;
-$cursor: #fff;
-
-@supports (-webkit-mask: none) and (not (cater-color: $cursor)) {
-  .login-container .el-input input {
-    color: $cursor;
-  }
-}
-
-/* reset element-ui css */
-.login-container {
-  width: 100%;
-  height: 100%;
-  .el-input {
-    display: inline-block;
-    height: 47px;
-    width: 80%;
-    .el-input__wrapper {
-      background: transparent;
-      border: 0;
-      box-shadow: none;
-
-      &:hover {
-        box-shadow: none;
-      }
-
-      &.is-focus {
-        box-shadow: none;
-      }
-    }
-    input {
-      background: transparent;
-      border: 0px;
-      -webkit-appearance: none;
-      border-radius: 0px;
-      padding: 12px 5px 12px 15px;
-      color: $light_gray;
-      height: 47px;
-      caret-color: $cursor;
-
-      &:-webkit-autofill {
-        box-shadow: 0 0 0px 1000px $bg inset !important;
-        -webkit-text-fill-color: $cursor !important;
-      }
-    }
-  }
-
-  .el-form-item {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: 5px;
-    color: #454545;
-  }
-}
-</style>
-
 <style lang="scss" scoped>
-$bg:#2d3a4b;
-$dark_gray:#889aa4;
-$light_gray:#eee;
+$bg: #0f1720;
+$card-bg: rgba(255, 255, 255, 0.08);
+$border: rgba(255, 255, 255, 0.16);
+$input-bg: rgba(255, 255, 255, 0.08);
+$input-border: rgba(255, 255, 255, 0.18);
+$light_gray: #eef2f7;
+$muted_gray: #9aa5b1;
+$focus_blue: #6c9dff;
 
 .login-container {
-  min-height: 100%;
+  min-height: 100vh;
   width: 100%;
-  background-color: $bg;
-  overflow: hidden;
-  background-image: url('../../assets/bg.png');
-  background-size: 100%;
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  background-image: linear-gradient(rgba(15, 23, 32, 0), rgba(11, 18, 24, 0.85)), url('../../assets/bg.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: $light_gray;
+  overflow: hidden;
+}
 
-  .login-form {
-    position: relative;
-    width: 520px;
-    max-width: 100%;
-    padding: 35px 35px 10px;
-    margin: 0 auto;
-    overflow: hidden;
-    background-color: #2d3a4b;
-    border-radius: 10px;
-    opacity: 0.85;
+.login-form {
+  width: min(520px, 100%);
+  padding: 44px 38px 34px;
+  background: $card-bg;
+  border: 1px solid $border;
+  border-radius: 24px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(18px);
+}
+
+.title-container {
+  margin-bottom: 28px;
+  text-align: center;
+
+  .title {
+    font-size: 28px;
+    color: #f8fafc;
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+}
+
+.el-form-item {
+  margin-bottom: 22px;
+  padding: 4px 8px;
+  border-radius: 16px;
+  background: $input-bg;
+  border: 1px solid $input-border;
+  position: relative;
+}
+
+.el-input {
+  width: 100%;
+
+  .el-input__wrapper {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
 
-  .tips {
-    font-size: 14px;
-    color: #fff;
-    margin-bottom: 10px;
+  input {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    color: $light_gray;
+    padding: 14px 12px 14px 52px;
+    height: 50px;
+    font-size: 15px;
+    caret-color: $focus_blue;
 
-    span {
-      &:first-of-type {
-        margin-right: 16px;
-      }
+    &:-webkit-autofill {
+      box-shadow: 0 0 0px 1000px $input-bg inset !important;
+      -webkit-text-fill-color: $light_gray !important;
     }
   }
+}
 
-  .svg-container {
-    padding: 6px 5px 6px 15px;
-    color: $dark_gray;
-    vertical-align: middle;
-    width: 30px;
-    display: inline-block;
-  }
+.svg-container {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: $muted_gray;
+}
 
-  .title-container {
-    position: relative;
+.show-pwd {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  color: $muted_gray;
+  cursor: pointer;
+}
 
-    .title {
-      font-size: 26px;
-      color: $light_gray;
-      margin: 0px auto 40px auto;
-      text-align: center;
-      font-weight: bold;
-    }
-  }
+.el-button {
+  width: 100%;
+  height: 50px;
+  border-radius: 14px;
+  font-size: 16px;
+  background: linear-gradient(90deg, #4f83ff 0%, #2e64ff 100%);
+  border: none;
+}
 
-  .show-pwd {
-    position: absolute;
-    right: 10px;
-    top: 7px;
-    font-size: 16px;
-    color: $dark_gray;
-    cursor: pointer;
-    user-select: none;
-  }
+.el-button:hover {
+  background: linear-gradient(90deg, #5e8dff 0%, #3a79ff 100%);
 }
 </style>

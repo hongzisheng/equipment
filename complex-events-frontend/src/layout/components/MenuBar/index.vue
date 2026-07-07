@@ -4,7 +4,8 @@
     :unique-opened="false"
     collapse-transition
     router
-    mode="horizontal"
+    mode="vertical"
+    class="sidebar-menu"
   >
     <MenuItem v-for="item in routes" :key="item.path" :item="item" />
   </el-menu>
@@ -19,4 +20,9 @@ defineOptions({ name: 'MenuBar' })
 const routes = constantRoutes.filter((route) => !route.hidden)
 </script>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+.sidebar-menu {
+  height: 100%;
+  overflow-y: auto;
+}
+</style>

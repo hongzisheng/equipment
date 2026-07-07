@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask
 from flask_cors import CORS
 
-from app.blueprints import associate_bp, data_bp, file_bp, graph_bp, user_bp
+from app.blueprints import data_bp, user_bp
 from app.extension import init_extensions
 from app.services.database_service import check_database_status
 
@@ -32,10 +32,7 @@ def configure_logging(app: Flask):
 
 def register_blueprints(app: Flask):
     app.register_blueprint(user_bp, url_prefix="/user")
-    app.register_blueprint(file_bp, url_prefix="/file")
     app.register_blueprint(data_bp, url_prefix="/data")
-    app.register_blueprint(graph_bp, url_prefix="/graph")
-    app.register_blueprint(associate_bp, url_prefix="/associate")
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):
@@ -59,7 +56,7 @@ def create_app(config_class="app.config.DevelopmentConfig"):
     configure_logging(app)
 
     if not check_database_status(app):
-        raise RuntimeError("数据库连接失败，请检查 MongoDB 和 Neo4j 配置。")
+        raise RuntimeError("数据库连接失败，请检查 SQLite 配置。")
 
     register_blueprints(app)
     return app

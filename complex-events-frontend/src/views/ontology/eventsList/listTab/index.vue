@@ -13,7 +13,6 @@ import { formattedExtractResult } from '@/views/ontology/extract/index'
 import OntologySelector from '@/commomComponents/OntologySelector.vue'
 import EventDetail from '@/views/ontology/eventsList/listTab/EventDetail.vue'
 import SvgIcon from '@/components/SvgIcon/index.vue'
-import graphApi from '@/api/graphApi.js'
 import { ElMessage } from 'element-plus'
 import fileApi from '@/api/fileApi'
 import { Response } from '@/api'
@@ -141,44 +140,6 @@ const handleRetrieval = () => {
   }
   total.value = filteredFullList.value.length
   filterEventsListTableData.value = filteredFullList.value.slice(0, pageSize)
-}
-const rebuildLoading = ref(false)
-
-function rebuildGraph() {
-  rebuildLoading.value = true
-  graphApi
-    .rebuild()
-    .then((res) => {
-      if (res.code === 20000) {
-        ElMessage.success('重建成功')
-      }
-    })
-    .catch((err) => {
-      ElMessage.error('重建失败' + err.toString())
-    })
-    .finally(() => {
-      rebuildLoading.value = false
-    })
-}
-
-const building = ref(false)
-
-function buildGuild() {
-  building.value = true
-  const ids = selectedItems.value.map((item) => item.reportId)
-  graphApi
-    .build(ids)
-    .then((res) => {
-      if (res.code === 20000) {
-        ElMessage.success('构建成功')
-      }
-    })
-    .catch((err) => {
-      ElMessage.error('构建失败' + err.toString())
-    })
-    .finally(() => {
-      building.value = false
-    })
 }
 // 时间关联空间关联特别处理
 function timeAndSpaceRelatedProp(prop: string) {
@@ -310,14 +271,6 @@ function viewReportDetail(row) {
           <Delete />
         </el-icon>
         批量删除
-      </el-button>
-      <el-button type="success" @click="buildGuild" v-loading="building">
-        <SvgIcon icon-class="hammer" />
-        目标引导的事件图谱构建
-      </el-button>
-      <el-button type="warning" @click="rebuildGraph" v-loading="rebuildLoading">
-        <SvgIcon icon-class="hammer" />
-        重构
       </el-button>
     </div>
   </div>

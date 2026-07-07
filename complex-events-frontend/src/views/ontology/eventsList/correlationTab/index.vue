@@ -4,7 +4,6 @@ import ToSelectList from '@/views/ontology/eventsList/correlationTab/ToSelectLis
 import Details from '@/views/ontology/eventsList/correlationTab/Details.vue'
 import MindMap from '@/views/ontology/eventsList/correlationTab/MindMap.vue'
 import dataApi from '@/api/dataApi.js'
-import associateApi from '@/api/associateApi'
 import fileApi from '@/api/fileApi'
 import { OntologySystemData } from '@/views/ontology/ontologySystem'
 import { ElMessage } from 'element-plus'
@@ -51,7 +50,6 @@ function dedupePairs(pairs) {
 }
 
 async function handleAssociate() {
-  const methods = methodRef.value?.checkedMethods || []
   const reportId = selectedRow.value?.reportId
   if (!reportId) {
     ElMessage.warning('请先选择事件')
@@ -59,15 +57,6 @@ async function handleAssociate() {
   }
 
   const candidates = []
-  if (methods.includes('graph')) {
-    const personComm = await associateApi.commonPerson(reportId)
-    candidates.push(...personComm.data.map((pair) => [...pair, 'graph']))
-    const placeComm = await associateApi.commonPlace(reportId)
-    candidates.push(...placeComm.data.map((pair) => [...pair, 'graph']))
-    const orgComm = await associateApi.commonOrganization(reportId)
-    candidates.push(...orgComm.data.map((pair) => [...pair, 'graph']))
-  }
-
   if (selectedRow.value.eventName) {
     const res = await fileApi.search(selectedRow.value.eventName, true)
     candidates.push(...res.data.map((id) => [reportId, id, 'keyword']))
@@ -81,24 +70,6 @@ async function handleAssociate() {
   }
 }
 
-function handleConfirmAssociateDate() {
-  saveLoading.value = true
-  associateApi
-    .linkAllRelInGraph()
-    .then((res) => {
-      if (res.code === 20000) {
-        ElMessage.success('关联保存成功')
-      } else {
-        ElMessage.error('关联保存失败')
-      }
-    })
-    .catch((e) => {
-      ElMessage.error('错误' + e)
-    })
-    .finally(() => {
-      saveLoading.value = false
-    })
-}
 
 function refreshMindMap() {
   if (!selectedRow.value?.reportId) return
@@ -136,14 +107,6 @@ function refreshMindMap() {
         <el-button type="primary" @click="handleAssociate">
           <el-icon><VideoPlay /></el-icon>开始关联
         </el-button>
-        <el-tooltip>
-          <template #default>
-            <el-button type="success" @click="handleConfirmAssociateDate" v-loading="saveLoading">
-              <el-icon><Connection /></el-icon>确认关联数据
-            </el-button>
-          </template>
-          <template #content>确认是否将关系作为图谱关系边插入</template>
-        </el-tooltip>
         <el-button @click="refreshMindMap">刷新关联图</el-button>
       </div>
     </div>

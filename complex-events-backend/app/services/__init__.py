@@ -1,1 +1,2 @@
-from .database_service.neo4j_service import execute_cypher
+def execute_cypher(*args, **kwargs):
+    raise RuntimeError("Neo4j support has been removed. Graph database operations are disabled.")

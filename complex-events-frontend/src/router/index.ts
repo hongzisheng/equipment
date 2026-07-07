@@ -148,7 +148,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/dispatch/equipment',
         name: '设备',
-        component: EmptyPage,
+        component: () => import('@/views/SchedulingDataManagement/equipment.vue'),
         meta: { title: '设备' },
       },
       {

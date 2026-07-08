@@ -349,7 +349,7 @@ const submitAddDevice = () => {
 // 从后端获取设备数据
 const fetchDevices = async () => {
   try {
-    const response = await fetch('http://localhost:5000/api/equipment-instances')
+    const response = await fetch('/api/equipment-instances')
     const resData = await response.json()
     const deviceList = resData.data || resData.equipment_instances
     console.log('Fetched device data from backend:', deviceList)
@@ -408,7 +408,7 @@ const saveToBackend = async () => {
     const selectedDeviceIdsArray = Array.from(selectedDeviceIds.value)
     console.log('Sending selected device IDs to backend:', selectedDeviceIdsArray)
     
-    const response = await fetch('http://localhost:5000/api/select-equipments', {
+    const response = await fetch('/api/select-equipments', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

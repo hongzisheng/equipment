@@ -17,17 +17,21 @@ export default defineConfig({
   server: {
     port: 8888,
     open: false,
-<<<<<<< HEAD
-=======
-    //跨域代理配置（如果需要）
+    //跨域代理配置
     proxy: {
       '/api': {
         target: 'http://localhost:8800',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        changeOrigin: true
+      },
+      '/data': {
+        target: 'http://localhost:8800',
+        changeOrigin: true
+      },
+      '/user': {
+        target: 'http://localhost:8800',
+        changeOrigin: true
       }
-    }
->>>>>>> 794934131b294c96c107dfe2e828aca9284d48b4
+    }  
   },
 
   // 插件配置

@@ -45,7 +45,7 @@ def create_app(config_class="app.config.DevelopmentConfig"):
         app,
         resources={
             r"/*": {
-                "origins": ["http://localhost:8888", "http://localhost:8889", "http://127.0.0.1:8889", "http://localhost:5000"],
+                "origins": ["http://localhost:8888", "http://127.0.0.1:8888", "http://localhost:8889", "http://127.0.0.1:8889", "http://localhost:5000"],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "X-Token"],
                 "supports_credentials": True,

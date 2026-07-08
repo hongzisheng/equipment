@@ -306,7 +306,7 @@ const workerPoolData = ref([])
 const fetchWorkerPool = async () => {
   try {
     console.log('fetchWorkerPool 开始执行');
-    const response = await fetch('http://localhost:5000/api/worker-team')
+    const response = await fetch('/api/worker-team')
     const result = await response.json()
     if (result.success) {
       workerPoolData.value = result.data
@@ -329,7 +329,7 @@ const openEditPoolDialog = () => {
 }
 const saveTeamCompose = async () => {
   try {
-    const response = await fetch('http://localhost:5000/api/worker-team', {
+    const response = await fetch('/api/worker-team', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -456,7 +456,7 @@ const workerForm = reactive({
 // 获取工人数据并动态生成表格列
 const fetchWorkers = async () => {
   try {
-    const response = await fetch('http://localhost:5000/api/workers')
+    const response = await fetch('/api/workers')
     const data = await response.json()
     console.log('获取工人数据成功:', data)
     
@@ -689,7 +689,7 @@ const saveToLocalStorage = async () => {
     const selectedWorkerIdsArray = Array.from(selectedWorkerIds.value);
     console.log('Sending selected worker IDs to backend:', selectedWorkerIdsArray);
     
-    const response = await fetch('http://localhost:5000/api/select-workers', {
+    const response = await fetch('/api/select-workers', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

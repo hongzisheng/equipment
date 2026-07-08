@@ -1,5 +1,15 @@
 import request from '@/utils/request.js'
-import { typeGroupReduce } from '@/views/ontology/eventsList/correlationTab/index.js'
+
+function typeGroupReduce(data) {
+  if (!Array.isArray(data)) return data
+  const grouped = {}
+  data.forEach(item => {
+    const type = item.type || 'unknown'
+    if (!grouped[type]) grouped[type] = []
+    grouped[type].push(item)
+  })
+  return grouped
+}
 
 function normalizeExtractResult(data) {
   return data

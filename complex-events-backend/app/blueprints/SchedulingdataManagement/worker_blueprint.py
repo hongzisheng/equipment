@@ -9,7 +9,7 @@ scheduler = None
 
 def get_db_path():
     """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
+    current_dir = Path(__file__).parent.parent.parent
     return current_dir / 'database' / 'db.sqlite3'
 
 

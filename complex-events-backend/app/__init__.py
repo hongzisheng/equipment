@@ -5,8 +5,8 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask
 from flask_cors import CORS
 
-from app.blueprints import data_bp, user_bp, scheduling_bp
-from app.extension import init_extensions
+from app.blueprints import data_bp, user_bp
+from app.blueprints.SchedulingdataManagement import scheduling_bp
 from app.services.database_service import check_database_status
 
 
@@ -33,7 +33,7 @@ def configure_logging(app: Flask):
 def register_blueprints(app: Flask):
     app.register_blueprint(user_bp, url_prefix="/user")
     app.register_blueprint(data_bp, url_prefix="/data")
-    app.register_blueprint(scheduling_bp, url_prefix="")
+    app.register_blueprint(scheduling_bp)
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):
@@ -52,7 +52,6 @@ def create_app(config_class="app.config.DevelopmentConfig"):
         },
     )
 
-    init_extensions(app)
     make_dirs(app)
     configure_logging(app)
 

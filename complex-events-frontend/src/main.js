@@ -4,13 +4,13 @@ import ElementPlus from 'element-plus' // 导入 Element Plus
 import 'element-plus/dist/index.css' // 导入 Element Plus 的样式
 
 import App from './App.vue'
-import router from './router/index.js'
+import router from './router/index.ts'
 import '@/styles/index.scss'
 import SvgIcon from '@/components/SvgIcon/index.vue'
 import 'virtual:svg-icons-register'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { zhCn } from 'element-plus/es/locale/index'
-import { useOntologyStore } from '@/stores/ontologyStore.js'
+import { useOntologyStore } from '@/stores/ontologyStore.ts'
 
 const app = createApp(App)
 

@@ -251,11 +251,3 @@ def get_extract_result_collection():
 
 def get_event_link_collection():
     return get_collection(current_app.config.get("SQLITE_EVENT_LINK_COLLECTION", "event_links"))
-
-
-def get_sub_graph_collection():
-    return get_collection(current_app.config.get("SQLITE_SUB_GRAPH_COLLECTION", "sub_graph"))
-
-
-def get_event_link_rules_collection():
-    return get_collection(current_app.config.get("SQLITE_EVENT_LINK_RULES_COLLECTION", "event_link_rules"))

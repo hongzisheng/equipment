@@ -2,7 +2,7 @@ from flask import jsonify, request
 import sqlite3
 from pathlib import Path
 
-from . import scheduling_bp
+from . import worker_bp
 
 scheduler = None
 
@@ -15,7 +15,7 @@ def get_db_path():
 
 # ----------工人相关------------------
 """获取所有工人信息"""
-@scheduling_bp.route('/workers', methods=['GET'])
+@worker_bp.route('/workers', methods=['GET'])
 def get_workers():
     try:
         db_path = get_db_path()
@@ -59,7 +59,7 @@ def get_workers():
         }), 500
 
 """获取所有工种信息"""
-@scheduling_bp.route('/worker-types', methods=['GET'])
+@worker_bp.route('/worker-types', methods=['GET'])
 def get_worker_types():
     try:
         db_path = get_db_path()
@@ -97,7 +97,7 @@ def get_worker_types():
             'message': '获取工种信息失败'
         }), 500
 """设置选中的工人"""
-@scheduling_bp.route('/select-workers', methods=['POST'])
+@worker_bp.route('/select-workers', methods=['POST'])
 def select_workers():
     try:
         data = request.get_json()
@@ -166,7 +166,7 @@ def select_workers():
 
 
 """获取当前选中的工人"""
-@scheduling_bp.route('/selected-workers', methods=['GET'])
+@worker_bp.route('/selected-workers', methods=['GET'])
 def get_selected_workers():
     try:
         db_path = get_db_path()
@@ -208,7 +208,7 @@ def get_selected_workers():
 
 
 """添加工人信息到数据库"""
-@scheduling_bp.route('/add-worker', methods=['POST'])
+@worker_bp.route('/add-worker', methods=['POST'])
 def add_worker():
     try:
         data = request.get_json()
@@ -252,7 +252,7 @@ def add_worker():
 
 
 """批量导入工人"""
-@scheduling_bp.route('/batch-import-workers', methods=['POST'])
+@worker_bp.route('/batch-import-workers', methods=['POST'])
 def batch_import_workers():
     try:
         data = request.get_json()
@@ -318,7 +318,7 @@ def batch_import_workers():
 
 
 """删除工人信息"""
-@scheduling_bp.route('/workers/<int:worker_id>', methods=['DELETE'])
+@worker_bp.route('/workers/<int:worker_id>', methods=['DELETE'])
 def delete_worker(worker_id):
     try:
         db_path = get_db_path()
@@ -359,7 +359,7 @@ def delete_worker(worker_id):
             'message': '删除工人失败'
         }), 500
 # ========== 工人池管理 ==========
-@scheduling_bp.route('/worker-team', methods=['GET'])
+@worker_bp.route('/worker-team', methods=['GET'])
 def get_worker_team():
     """获取工人池数据（普工、技工、高级技工的总人数和已分配人数）"""
     try:
@@ -394,7 +394,7 @@ def get_worker_team():
             'message': '获取工人池数据失败'
         }), 500
 
-@scheduling_bp.route('/worker-team', methods=['PUT'])
+@worker_bp.route('/worker-team', methods=['PUT'])
 def update_worker_team():
     try:
         data = request.get_json()

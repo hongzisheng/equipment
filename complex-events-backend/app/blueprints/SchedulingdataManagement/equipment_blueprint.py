@@ -3,7 +3,7 @@ import sqlite3
 import datetime
 from pathlib import Path
 
-from . import scheduling_bp
+from . import equipment_bp
 
 scheduler = None
 
@@ -14,7 +14,7 @@ def get_db_path():
     return current_dir / 'database' / 'db.sqlite3'
 
 """获取设备分类"""
-@scheduling_bp.route('/equipment-categories', methods=['GET'])
+@equipment_bp.route('/equipment-categories', methods=['GET'])
 def get_equipment_categories():
     try:
         db_path = get_db_path()
@@ -31,7 +31,7 @@ def get_equipment_categories():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 """获取设备类型（含分类字段）"""
-@scheduling_bp.route('/equipment-types-with-category', methods=['GET'])
+@equipment_bp.route('/equipment-types-with-category', methods=['GET'])
 def get_equipment_types_with_category():
     try:
         db_path = get_db_path()
@@ -49,7 +49,7 @@ def get_equipment_types_with_category():
 
 #----------设备相关------------------
 """获取所有设备类型"""
-@scheduling_bp.route('/equipment-types', methods=['GET'])
+@equipment_bp.route('/equipment-types', methods=['GET'])
 def get_equipment_types():
     try:
         db_path = get_db_path()
@@ -65,7 +65,7 @@ def get_equipment_types():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@scheduling_bp.route('/select-equipments', methods=['POST'])
+@equipment_bp.route('/select-equipments', methods=['POST'])
 def select_equipments():
     try:
         data = request.get_json()
@@ -134,7 +134,7 @@ def select_equipments():
         }), 500
 
 """获取当前选中的设备"""
-@scheduling_bp.route('/selected-equipments', methods=['GET'])
+@equipment_bp.route('/selected-equipments', methods=['GET'])
 def get_selected_equipments():
     try:
         db_path = get_db_path()
@@ -173,7 +173,7 @@ def get_selected_equipments():
             'message': '获取选中设备失败'
         }), 500
 """获取所有设备实例"""
-@scheduling_bp.route('/equipment-instances', methods=['GET'])
+@equipment_bp.route('/equipment-instances', methods=['GET'])
 def get_equipment_instances():
     try:
         db_path = get_db_path()
@@ -210,7 +210,7 @@ def get_equipment_instances():
             'message': '获取设备实例失败'
         }), 500
 """根据设备类型ID查询该类型下的所有设备实例"""
-@scheduling_bp.route('/equipment-instances/by-type/<string:equipment_type_id>', methods=['GET'])
+@equipment_bp.route('/equipment-instances/by-type/<string:equipment_type_id>', methods=['GET'])
 def get_equipment_instances_by_type(equipment_type_id):
     try:
         db_path = get_db_path()
@@ -262,7 +262,7 @@ def get_equipment_instances_by_type(equipment_type_id):
             'message': '根据设备类型查询设备实例失败'
         }), 500
 """添加设备实例"""
-@scheduling_bp.route('/add-equipment', methods=['POST'])
+@equipment_bp.route('/add-equipment', methods=['POST'])
 def add_equipment():
     try:
         data = request.get_json()
@@ -306,7 +306,7 @@ def add_equipment():
         }), 500
 
 """批量导入设备实例"""
-@scheduling_bp.route('/batch-import-equipment', methods=['POST'])
+@equipment_bp.route('/batch-import-equipment', methods=['POST'])
 def batch_import_equipment():
     try:
         data = request.get_json()
@@ -370,7 +370,7 @@ def batch_import_equipment():
         }), 500 
 
 """删除设备实例"""
-@scheduling_bp.route('/equipment-instances/<int:equipment_id>', methods=['DELETE'])
+@equipment_bp.route('/equipment-instances/<int:equipment_id>', methods=['DELETE'])
 def delete_equipment_instance(equipment_id):
     try:
         db_path = get_db_path()
@@ -412,7 +412,7 @@ def delete_equipment_instance(equipment_id):
         }), 500
 
 """根据ID查询单个设备实例"""
-@scheduling_bp.route('/equipment-instances/<int:equipment_id>', methods=['GET'])
+@equipment_bp.route('/equipment-instances/<int:equipment_id>', methods=['GET'])
 def get_equipment_instance(equipment_id):
     try:
         db_path = get_db_path()

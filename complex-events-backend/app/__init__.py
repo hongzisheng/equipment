@@ -35,8 +35,6 @@ def register_blueprints(app: Flask):
     app.register_blueprint(data_bp, url_prefix="/data")
     app.register_blueprint(worker_bp, url_prefix="/api")
     app.register_blueprint(equipment_bp, url_prefix="/api")
-    
-
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):
@@ -55,7 +53,6 @@ def create_app(config_class="app.config.DevelopmentConfig"):
         },
     )
 
-    init_extensions(app)
     make_dirs(app)
     configure_logging(app)
 

@@ -24,20 +24,3 @@ class Config:
 class DevelopmentConfig(Config):
     DEBUG = True
     PORT = 8800
-
-
-class ProductionConfig(Config):
-    DEBUG = False
-
-
-class TestingConfig(Config):
-    TESTING = True
-    DEBUG = True
-
-
-config = {
-    "development": DevelopmentConfig,
-    "production": ProductionConfig,
-    "testing": TestingConfig,
-    "default": DevelopmentConfig,
-}

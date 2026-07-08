@@ -9,7 +9,7 @@ scheduler = None
 
 def get_db_path():
     """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
+    current_dir = Path(__file__).parent.parent.parent.parent
     return current_dir / 'database' / 'db.sqlite3'
 
 
@@ -24,8 +24,7 @@ def get_workers():
 
         # 查询工人信息（增加 compose 字段）
         c.execute('''
-            SELECT id, name, worker_type_id, is_certified, organization, emp_id, compose,skill_level
-            FROM workers
+            SELECT id, name, worker_type_id, is_certified, organization, emp_id, compose
             ORDER BY id
         ''')
 
@@ -39,8 +38,7 @@ def get_workers():
                 'is_certified': row[3],
                 'organization': row[4],
                 'emp_id': row[5],
-                'compose': row[6],
-                'skill_level': row[7]              
+                'compose': row[6]          
             })
 
         conn.close()
@@ -52,6 +50,8 @@ def get_workers():
         })
 
     except Exception as e:
+        # 新增下面这行打印代码：
+        print("!!! 获取工人接口报错了 !!!:", str(e))
         return jsonify({
             'success': False,
             'error': str(e),

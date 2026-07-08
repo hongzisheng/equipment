@@ -6,7 +6,10 @@ from flask import Flask
 from flask_cors import CORS
 
 from app.blueprints import data_bp, user_bp
+<<<<<<< HEAD
 from app.blueprints.SchedulingdataManagement import scheduling_bp
+=======
+>>>>>>> 794934131b294c96c107dfe2e828aca9284d48b4
 from app.services.database_service import check_database_status
 
 

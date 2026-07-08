@@ -5,7 +5,7 @@
     <!-- 添加设备查询组件 -->
     <div class="equipment-search-container">
       <h3 class="search-title">规则查询</h3>
-      <el-form :model="filterForm" class="search-form" label-width="120px" size="medium">
+      <el-form :model="filterForm" class="search-form" label-width="120px" size="default">
         <el-form-item label="设备种类">
           <el-input
             v-model="filterForm.equipmentType"
@@ -16,8 +16,8 @@
           />
         </el-form-item>
         <el-form-item class="search-btn-group">
-          <el-button type="primary" size="medium" @click="fetchRuleData">查询</el-button>
-          <el-button size="medium" @click="resetFilter">重置</el-button>
+          <el-button type="primary" size="default" @click="fetchRuleData">查询</el-button>
+          <el-button size="default" @click="resetFilter">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -775,7 +775,7 @@ async function fetchRuleData() {
   try {
     loadingRules.value = true
     const response = await request({
-      url: 'http://localhost:8800/api/all-process-templates',
+      url: '/api/all-process-templates',
       method: 'get'
     })
     
@@ -796,7 +796,7 @@ async function fetchWorkerTypes() {
   try {
     loadingWorkers.value = true
     const response = await request({
-      url: 'http://localhost:8800/api/worker-types',
+      url: '/api/worker-types',
       method: 'get'
     })
     // 假设返回格式为 { success: true, data: [...] } 或直接数组
@@ -845,8 +845,8 @@ async function submitWorker() {
   }
   try {
     const url = editingWorker.value 
-      ? `http://localhost:8800/api/worker-types/${workerForm.id}`
-      : 'http://localhost:8800/api/worker-types'
+      ? `/api/worker-types/${workerForm.id}`
+      : '/api/worker-types'
     const method = editingWorker.value ? 'put' : 'post'
     
     const response = await request({
@@ -880,7 +880,7 @@ function deleteWorker(row) {
   }).then(async () => {
     try {
       const response = await request({
-        url: `http://localhost:8800/api/worker-types/${row.id}`,
+        url: `/api/worker-types/${row.id}`,
         method: 'delete'
       })
       if (response.success) {
@@ -1478,7 +1478,7 @@ async function updateProcess() {
     }
     
     const response = await request({
-      url: `http://localhost:8800/api/process-templates/${templateId}`,
+      url: `/api/process-templates/${templateId}`,
       method: 'put',
       data: {
         description: editProcessForm.description,
@@ -1524,7 +1524,7 @@ function deleteProcess(row) {
       const templateId = `${currentRuleKey.value}-${row.process_code}`
       
       const response = await request({
-        url: `http://localhost:8800/api/process-templates/${templateId}`,
+        url: `/api/process-templates/${templateId}`,
         method: 'delete'
       })
       
@@ -1657,7 +1657,7 @@ async function submitAddProcess() {
     }
     
     const response = await request({
-      url: 'http://localhost:8800/api/process-templates',
+      url: '/api/process-templates',
       method: 'post',
       data: {
         equipment_type_id: currentRuleKey.value,

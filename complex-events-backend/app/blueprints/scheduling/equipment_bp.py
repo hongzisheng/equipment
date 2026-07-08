@@ -1,10 +1,47 @@
 from flask import Blueprint, jsonify, request, current_app
 import sqlite3
 import datetime
+from pathlib import Path
+
 equipment_bp = Blueprint('equipment', __name__)
 
 def get_db_path():
-    return current_app.config['DATABASE_URI']
+    """统一获取数据库路径"""
+    return Path(__file__).resolve().parent.parent.parent.parent / 'database' / 'db.sqlite3'
+
+
+class AppDataManager:
+    """应用数据管理器"""
+    
+    @staticmethod
+    def get_equipment_types():
+        db_path = get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        c = conn.cursor()
+        c.execute('SELECT id, name, category FROM equipment_types ORDER BY id')
+        rows = c.fetchall()
+        conn.close()
+        return rows
+    
+    @staticmethod
+    def get_equipment_instances():
+        db_path = get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        c = conn.cursor()
+        c.execute('SELECT id, name, equipment_type_id, equipment_type_name, category FROM equipment_instances ORDER BY id')
+        rows = c.fetchall()
+        conn.close()
+        return rows
+    
+    @staticmethod
+    def get_selected_equipment_instances():
+        db_path = get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        c = conn.cursor()
+        c.execute('SELECT id, name, equipment_type_id, equipment_type_name, category FROM selected_equipments ORDER BY id')
+        rows = c.fetchall()
+        conn.close()
+        return rows
 
 """获取设备分类"""
 @equipment_bp.route('/equipment-categories', methods=['GET'])
@@ -17,11 +54,12 @@ def get_equipment_categories():
         rows = c.fetchall()
         conn.close()
         return jsonify({
+            'code': 20000,
             'success': True,
             'data': [{'id': row[0], 'name': row[1]} for row in rows]
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'code': 50000, 'success': False, 'error': str(e)}), 500
 
 """获取设备类型（含分类字段）"""
 @equipment_bp.route('/equipment-types-with-category', methods=['GET'])
@@ -34,11 +72,12 @@ def get_equipment_types_with_category():
         rows = c.fetchall()
         conn.close()
         return jsonify({
+            'code': 20000,
             'success': True,
             'data': [{'id': row[0], 'name': row[1], 'category': row[2]} for row in rows]
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'code': 50000, 'success': False, 'error': str(e)}), 500
 
 #----------设备相关------------------
 """获取所有设备类型"""

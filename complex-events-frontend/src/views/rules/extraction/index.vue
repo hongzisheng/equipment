@@ -223,7 +223,7 @@
 
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   UploadFilled,
   ArrowLeft,
@@ -238,9 +238,14 @@ import * as pdfjsLib from 'pdfjs-dist'
 
 // ✅ 修正为 .mjs 后缀（5.x 版本的正确 worker 文件）
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
+// ✅ CMaps 参数传给 getDocument，避免全局设置报错
+const pdfCmapOptions = {
+  cMapUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+  cMapPacked: true,
+}
 
 // 后端接口地址（需根据实际部署调整）
-const API_BASE = 'http://localhost:8800/api'
+const API_BASE = '/api'
 
 // ========== 上传相关 ==========
 const uploadInputRef = ref(null)
@@ -398,56 +403,90 @@ async function saveEdit() {
   }
 }
 
-async function handleFileChange(e) {
-  const files = e.target.files
-  if (!files.length) return
+    async function uploadOne(file) {
+      const formData = new FormData()
+      formData.append('file', file)
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i]
-    if (file.type !== 'application/pdf') {
-      ElMessage.warning(`文件 ${file.name} 不是 PDF，仅 PDF 可预览，但仍可上传用于知识提取`)
-    }
-
-    const uploadItem = {
-      name: file.name,
-      file: file,
-      loading: true,
-      percent: 0,
-      statusText: '上传中...',
-      file_id: null,
-      pdfUrl: null
-    }
-    uploadedFiles.value.push(uploadItem)
-    const idx = uploadedFiles.value.length - 1
-
-    const formData = new FormData()
-    formData.append('file', file)
-
-    try {
       const resp = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData,
       })
       const data = await resp.json()
-      if (data.success) {
-        uploadedFiles.value[idx].percent = 100
-        uploadedFiles.value[idx].loading = false
-        uploadedFiles.value[idx].statusText = '已上传'
-        uploadedFiles.value[idx].file_id = data.file_id
-        uploadedFiles.value[idx].pdfUrl = data.url
 
-        // 如果是 PDF 且尚无预览，自动加载第一个 PDF
-        if (file.type === 'application/pdf' && !pdfDoc) {
-          loadPdfForPreview(data.url)
+      // 重名检测：询问用户是否覆盖
+      if (data.duplicate) {
+        try {
+          await ElMessageBox.confirm(
+            `文件 "${data.filename}" 已存在，是否覆盖？覆盖后旧数据将丢失。`,
+            '文件已存在',
+            { confirmButtonText: '覆盖', cancelButtonText: '取消', type: 'warning' }
+          )
+          // 用户选择覆盖，重新上传带 override 标记
+          const overrideForm = new FormData()
+          overrideForm.append('file', file)
+          overrideForm.append('override', 'true')
+          const resp2 = await fetch(`${API_BASE}/upload`, {
+            method: 'POST',
+            body: overrideForm,
+          })
+          const data2 = await resp2.json()
+          if (!data2.success) throw new Error(data2.error || '覆盖上传失败')
+          return data2
+        } catch {
+          // 用户取消，跳过此文件
+          return null
         }
-      } else {
-        throw new Error(data.message)
       }
-    } catch (err) {
-      uploadedFiles.value[idx].loading = false
-      uploadedFiles.value[idx].statusText = '上传失败'
-      ElMessage.error(`上传 ${file.name} 失败：${err.message}`)
+
+      if (!data.success) throw new Error(data.error || '上传失败')
+      return data
     }
+
+    async function handleFileChange(e) {
+      const files = e.target.files
+      if (!files.length) return
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        if (file.type !== 'application/pdf') {
+          ElMessage.warning(`文件 ${file.name} 不是 PDF，仅 PDF 可预览，但仍可上传用于知识提取`)
+        }
+
+        const uploadItem = {
+          name: file.name,
+          file: file,
+          loading: true,
+          percent: 0,
+          statusText: '上传中...',
+          file_id: null,
+          pdfUrl: null
+        }
+        uploadedFiles.value.push(uploadItem)
+        const idx = uploadedFiles.value.length - 1
+
+        try {
+          const data = await uploadOne(file)
+          if (!data) {
+            // 用户取消了覆盖，移除列表项
+            uploadedFiles.value.splice(idx, 1)
+            continue
+          }
+
+          uploadedFiles.value[idx].percent = 100
+          uploadedFiles.value[idx].loading = false
+          uploadedFiles.value[idx].statusText = '已上传'
+          uploadedFiles.value[idx].file_id = data.file_id
+          uploadedFiles.value[idx].pdfUrl = data.url
+
+          // 如果是 PDF 且尚无预览，自动加载第一个 PDF
+          if (file.type === 'application/pdf' && !pdfDoc) {
+            loadPdfForPreview(data.url)
+          }
+        } catch (err) {
+          uploadedFiles.value[idx].loading = false
+          uploadedFiles.value[idx].statusText = '上传失败'
+          ElMessage.error(`上传 ${file.name} 失败：${err.message}`)
+        }
   }
   uploadInputRef.value.value = ''
 }
@@ -504,7 +543,7 @@ async function loadPdfForPreview(url) {
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
 
     const arrayBuffer = await response.arrayBuffer()
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, ...pdfCmapOptions })
     pdfDoc = await loadingTask.promise
     pdfDoc.url = url
     totalPages.value = pdfDoc.numPages

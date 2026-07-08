@@ -6,7 +6,7 @@ from flask import Flask
 from flask_cors import CORS
 from pathlib import Path
 
-from app.blueprints import data_bp, user_bp, worker_bp, equipment_bp, chat_bp, workorder_mgmt_bp
+from app.blueprints import data_bp, user_bp, worker_bp, equipment_bp, chat_bp, workorder_mgmt_bp, parse_bp, tree_bp, process_bp
 from app.extension import init_extensions
 from app.services.database_service import check_database_status
 
@@ -38,6 +38,9 @@ def register_blueprints(app: Flask):
     app.register_blueprint(equipment_bp, url_prefix="/api")
     app.register_blueprint(chat_bp)
     app.register_blueprint(workorder_mgmt_bp)
+    app.register_blueprint(parse_bp)
+    app.register_blueprint(tree_bp)
+    app.register_blueprint(process_bp)
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):

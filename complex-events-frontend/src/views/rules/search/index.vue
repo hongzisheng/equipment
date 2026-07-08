@@ -97,10 +97,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
-const apiBase = 'http://localhost:8800'
-
 async function apiRequest(path, options = {}) {
-  const url = `${apiBase}${path}`
+  const url = path
   const defaultHeaders = { 'Content-Type': 'application/json' }
   const config = {
     ...options,

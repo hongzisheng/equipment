@@ -45,8 +45,9 @@ service.interceptors.response.use(
   response => {
     const res = response.data
 
-    // if the custom code is not 20000, it is judged as an error.
-    if (res.code !== 20000) {
+    // 判断请求是否成功：兼容 code=20000（vue-element-admin 旧格式）和 success=true（后端格式）
+    const isSuccess = res.code === 20000 || res.success === true
+    if (!isSuccess) {
       ElMessage({
         message: res.message || 'Error',
         type: 'error',

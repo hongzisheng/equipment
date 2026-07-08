@@ -182,11 +182,10 @@ import {
   Download, FullScreen, Minus, Plus, RefreshRight, Share, Tickets, Refresh, Aim, Connection
 } from '@element-plus/icons-vue'
 import * as d3 from 'd3'
-import request from '../../utils/request'
+import request from '@/utils/request'
 
 const RIGHT_SHIFT = 500 // 整体右移 150 个单位（可根据需要调整）
 
-const API_BASE = 'http://localhost:8800/api'
 const CACHE_KEY = 'knowledge_tree_cache'
 const CACHE_EXPIRE_HOURS = 24
 
@@ -808,9 +807,9 @@ const loadTree = async (forceUpdate = false) => {
       }
     }
     const [catRes, typeRes, relationsRes] = await Promise.all([
-      request({ url: `${API_BASE}/equipment-categories`, method: 'GET' }),
-      request({ url: `${API_BASE}/equipment-types-with-category`, method: 'GET' }),
-      request({ url: `${API_BASE}/graph-relations-archive`, method: 'GET' })
+      request({ url: '/api/equipment-categories', method: 'GET' }),
+      request({ url: '/api/equipment-types-with-category', method: 'GET' }),
+      request({ url: '/api/graph-relations-archive', method: 'GET' })
     ])
     if (!catRes?.success || !typeRes?.success || !relationsRes?.success) {
       throw new Error('数据获取失败')

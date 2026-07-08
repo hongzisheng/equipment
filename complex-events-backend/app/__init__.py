@@ -6,7 +6,6 @@ from flask import Flask
 from flask_cors import CORS
 
 from app.blueprints import data_bp, user_bp
-from app.extension import init_extensions
 from app.services.database_service import check_database_status
 
 
@@ -51,7 +50,6 @@ def create_app(config_class="app.config.DevelopmentConfig"):
         },
     )
 
-    init_extensions(app)
     make_dirs(app)
     configure_logging(app)
 

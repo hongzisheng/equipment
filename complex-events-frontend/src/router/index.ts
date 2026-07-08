@@ -115,19 +115,19 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/rules/tree',
         name: '知识结构树',
-        component: EmptyPage,
+        component: () => import('@/views/RuleManagement/KnowledgeStructureTree.vue'),
         meta: { title: '知识结构树' },
       },
       {
         path: '/rules/extraction',
         name: '知识提取',
-        component: EmptyPage,
+        component: () => import('@/views/RuleManagement/KnowledgeExtraction.vue'),
         meta: { title: '知识提取' },
       },
       {
         path: '/rules/search',
         name: '搜索区',
-        component: EmptyPage,
+        component: () => import('@/views/RuleManagement/SearchArea.vue'),
         meta: { title: '搜索区' },
       },
     ],

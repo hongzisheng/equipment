@@ -1,5 +1,5 @@
 import { ElMessage } from 'element-plus'
-import dataApi from '@/api/dataApi.js'
+import dataApi from '@/api/dataApi.ts'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 

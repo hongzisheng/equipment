@@ -775,7 +775,7 @@ async function fetchRuleData() {
   try {
     loadingRules.value = true
     const response = await request({
-      url: 'http://localhost:5000/api/all-process-templates',
+      url: 'http://localhost:8800/api/all-process-templates',
       method: 'get'
     })
     
@@ -796,7 +796,7 @@ async function fetchWorkerTypes() {
   try {
     loadingWorkers.value = true
     const response = await request({
-      url: 'http://localhost:5000/api/worker-types',
+      url: 'http://localhost:8800/api/worker-types',
       method: 'get'
     })
     // 假设返回格式为 { success: true, data: [...] } 或直接数组
@@ -845,8 +845,8 @@ async function submitWorker() {
   }
   try {
     const url = editingWorker.value 
-      ? `http://localhost:5000/api/worker-types/${workerForm.id}`
-      : 'http://localhost:5000/api/worker-types'
+      ? `http://localhost:8800/api/worker-types/${workerForm.id}`
+      : 'http://localhost:8800/api/worker-types'
     const method = editingWorker.value ? 'put' : 'post'
     
     const response = await request({
@@ -880,7 +880,7 @@ function deleteWorker(row) {
   }).then(async () => {
     try {
       const response = await request({
-        url: `http://localhost:5000/api/worker-types/${row.id}`,
+        url: `http://localhost:8800/api/worker-types/${row.id}`,
         method: 'delete'
       })
       if (response.success) {
@@ -1478,7 +1478,7 @@ async function updateProcess() {
     }
     
     const response = await request({
-      url: `http://localhost:5000/api/process-templates/${templateId}`,
+      url: `http://localhost:8800/api/process-templates/${templateId}`,
       method: 'put',
       data: {
         description: editProcessForm.description,
@@ -1524,7 +1524,7 @@ function deleteProcess(row) {
       const templateId = `${currentRuleKey.value}-${row.process_code}`
       
       const response = await request({
-        url: `http://localhost:5000/api/process-templates/${templateId}`,
+        url: `http://localhost:8800/api/process-templates/${templateId}`,
         method: 'delete'
       })
       
@@ -1657,7 +1657,7 @@ async function submitAddProcess() {
     }
     
     const response = await request({
-      url: 'http://localhost:5000/api/process-templates',
+      url: 'http://localhost:8800/api/process-templates',
       method: 'post',
       data: {
         equipment_type_id: currentRuleKey.value,

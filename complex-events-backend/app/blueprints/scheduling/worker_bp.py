@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 import sqlite3
 import datetime
 from pathlib import Path
@@ -8,12 +8,9 @@ worker_bp = Blueprint('worker', __name__, url_prefix='/api')
 
 
 def get_db_path():
-
-    base_dir = Path(__file__).resolve().parent.parent.parent.parent
-
-    db_path = base_dir / 'database' / 'db.sqlite3'
-    
-    return db_path
+    """统一从全局配置获取数据库路径"""
+    # 直接读取我们在 __init__.py 中算好的绝对路径
+    return current_app.config['DATABASE_URI']
 
 
 # ----------工人相关------------------

@@ -4,6 +4,7 @@ from logging.handlers import RotatingFileHandler
 
 from flask import Flask
 from flask_cors import CORS
+from pathlib import Path
 
 from app.blueprints import data_bp, user_bp, worker_bp, equipment_bp
 from app.extension import init_extensions
@@ -38,26 +39,32 @@ def register_blueprints(app: Flask):
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):
-    app = Flask(__name__)
-    app.config.from_object(config_class)
+        app = Flask(__name__)
+        app.config.from_object(config_class)
+        
+        # 👇 这是我们新增的 2 行代码：动态计算并写入绝对路径
+        BASE_DIR = Path(__file__).resolve().parent.parent
+        app.config['DATABASE_URI'] = str(BASE_DIR / 'database' / 'db.sqlite3')
+        # 👆 新增结束
 
-    CORS(
-        app,
-        resources={
-            r"/*": {
-                "origins": ["http://localhost:8888", "http://127.0.0.1:8888", "http://localhost:8889", "http://127.0.0.1:8889", "http://localhost:5000"],
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "X-Token"],
-                "supports_credentials": True,
-            }
-        },
-    )
 
-    make_dirs(app)
-    configure_logging(app)
+        CORS(
+            app,
+            resources={
+                r"/*": {
+                    "origins": ["http://localhost:8888", "http://127.0.0.1:8888", "http://localhost:8889", "http://127.0.0.1:8889", "http://localhost:5000"],
+                    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                    "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "X-Token"],
+                    "supports_credentials": True,
+                }
+            },
+        )
 
-    if not check_database_status(app):
-        raise RuntimeError("数据库连接失败，请检查 SQLite 配置。")
+        make_dirs(app)
+        configure_logging(app)
 
-    register_blueprints(app)
-    return app
+        if not check_database_status(app):
+            raise RuntimeError("数据库连接失败，请检查 SQLite 配置。")
+
+        register_blueprints(app)
+        return app

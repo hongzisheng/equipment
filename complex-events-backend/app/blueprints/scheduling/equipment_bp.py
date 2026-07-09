@@ -3,7 +3,7 @@ import sqlite3
 import datetime
 from pathlib import Path
 from functools import wraps
-import models
+from app import models
 equipment_bp = Blueprint('equipment', __name__, url_prefix='/api')
 
 class AppDataManager:

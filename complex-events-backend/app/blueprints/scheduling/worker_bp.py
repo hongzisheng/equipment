@@ -8,9 +8,12 @@ worker_bp = Blueprint('worker', __name__, url_prefix='/api')
 
 
 def get_db_path():
-    """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent.parent
-    return current_dir / 'database' / 'db.sqlite3'
+
+    base_dir = Path(__file__).resolve().parent.parent.parent.parent
+
+    db_path = base_dir / 'database' / 'db.sqlite3'
+    
+    return db_path
 
 
 # ----------工人相关------------------

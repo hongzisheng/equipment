@@ -1,35 +1,10 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 import sqlite3
 import datetime
-from pathlib import Path
-from functools import wraps
-from app import models
-equipment_bp = Blueprint('equipment', __name__, url_prefix='/api')
+equipment_bp = Blueprint('equipment', __name__)
 
-class AppDataManager:
-    """应用数据管理器，复用models.py中的接口"""
-    
-    @staticmethod
-    def get_equipment_types():
-        """获取所有设备类型"""
-        db_path = get_db_path()
-        return models.DatabaseManager.load_equipment_types_from_db(str(db_path))
-    
-    @staticmethod
-    def get_equipment_instances():
-        """获取所有设备实例"""
-        db_path = get_db_path()
-        return models.load_equipment_instances(str(db_path))
-
-    @staticmethod
-    def get_selected_equipment_instances():
-        """获取所有选择的设备实例"""
-        db_path = get_db_path()
-        return models.DatabaseManager.load_selected_equipment_instances_from_db(str(db_path))
 def get_db_path():
-    """统一获取数据库路径"""
-    current_dir = Path(__file__).parent.parent
-    return current_dir / 'database' / 'db.sqlite3'
+    return current_app.config['DATABASE_URI']
 
 """获取设备分类"""
 @equipment_bp.route('/equipment-categories', methods=['GET'])
@@ -194,17 +169,21 @@ def get_selected_equipments():
 @equipment_bp.route('/equipment-instances', methods=['GET'])
 def get_equipment_instances():
     try:
-        equipment_records = AppDataManager.get_equipment_instances()
-        
+        db_path = get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        c = conn.cursor()
+        c.execute('SELECT id, name, equipment_type_id, equipment_type_name, category FROM equipment_instances ORDER BY id')
+        rows = c.fetchall()
+        conn.close()
+
         equipment_instances = []
-        for record in equipment_records:
-            id,name,equipment_type_id, equipment_type_name,category = record
+        for row in rows:
             equipment_instances.append({
-                'id': id,
-                'name': name,
-                'equipment_type_id': equipment_type_id,
-                'equipment_type_name': equipment_type_name,
-                'category':category
+                'id': row[0],
+                'name': row[1],
+                'equipment_type_id': row[2],
+                'equipment_type_name': row[3] if len(row) > 3 else '',
+                'category': row[4] if len(row) > 4 else ''
             })
         
         return jsonify({

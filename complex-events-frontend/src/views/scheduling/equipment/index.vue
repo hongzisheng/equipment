@@ -61,6 +61,9 @@
               <el-button type="primary" size="small" @click="saveToBackend">
                 导出选中项
               </el-button>
+              <el-button type="danger" size="small" @click="deleteSelectedDevices">
+                删除选中项
+              </el-button>
             </div>
           </div>
         </div>
@@ -147,7 +150,7 @@
 <script setup>
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { ArrowUpBold, ArrowDownBold, Plus } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 // 设备表格引用
 const deviceTableRef = ref(null)
@@ -316,34 +319,31 @@ const onSelectEquipmentName = (item) => {
 }
 
 // 提交添加设备
-const submitAddDevice = () => {
-  // 添加新设备到数组中
-  const newDevice = {
-    id: devices.value.length + 1,
-    name: deviceForm.name,
-    code: deviceForm.code,
-    category: deviceForm.category,
-    type: deviceForm.type,
-    size: deviceForm.size,
-    location: deviceForm.location,
-    description: deviceForm.description,
-    applications: deviceForm.applications,
-    status: deviceForm.status
+const submitAddDevice = async () => {
+  try {
+    const response = await fetch('/api/add-equipment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        equipment_type_id: deviceForm.code,
+        equipment_name: deviceForm.name,
+        equipment_category: deviceForm.category
+      })
+    })
+    const result = await response.json()
+    if (result.success) {
+      ElMessage.success('设备添加成功')
+      addDeviceVisible.value = false
+      Object.keys(deviceForm).forEach(key => { deviceForm[key] = '' })
+      deviceForm.status = '正常'
+      await fetchDevices()
+    } else {
+      ElMessage.error(result.message || '添加失败')
+    }
+  } catch (e) {
+    console.error('添加设备失败:', e)
+    ElMessage.error('添加失败，请检查网络')
   }
-  
-  devices.value.push(newDevice)
-  
-  addDeviceVisible.value = false
-  // 重置表单
-  Object.keys(deviceForm).forEach(key => {
-    deviceForm[key] = ''
-  })
-  deviceForm.status = '正常'
-  
-  // 添加新设备后重新全选
-  nextTick(() => {
-    selectAllDevicesGlobally()
-  })
 }
 
 // 从后端获取设备数据
@@ -428,6 +428,43 @@ const saveToBackend = async () => {
   } catch (e) {
     console.error('发送到后端失败:', e)
     ElMessage.error('操作失败，请检查网络连接')
+  }
+}
+
+// 删除选中的设备
+const deleteSelectedDevices = async () => {
+  if (selectedDevices.value.length === 0) {
+    ElMessage.warning('请先选择要删除的设备')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedDevices.value.length} 个设备吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const selectedIds = selectedDevices.value.map(d => d.id)
+    for (const id of selectedIds) {
+      const response = await fetch(`/api/equipment-instances/${id}`, { method: 'DELETE' })
+      const result = await response.json()
+      if (!result.success) {
+        console.error(`删除设备 ${id} 失败:`, result.message)
+      }
+    }
+
+    ElMessage.success(`成功删除 ${selectedIds.length} 个设备`)
+    await fetchDevices()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('删除设备失败:', e)
+      ElMessage.error('删除失败，请检查网络')
+    }
   }
 }
 

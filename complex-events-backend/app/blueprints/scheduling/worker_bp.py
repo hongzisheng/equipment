@@ -22,11 +22,14 @@ def get_workers():
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
 
-        # 查询工人信息（增加 compose 字段）
+        # 查询工人信息
         c.execute('''
-            SELECT id, name, worker_type_id, is_certified, organization, emp_id, compose,skill_level
-            FROM workers
-            ORDER BY id
+            SELECT w.id, w.name, w.worker_type_id, w.is_certified,
+                   w.organization, w.emp_id, w.compose, w.status,
+                   COALESCE(wt.name, w.worker_type_id) AS worker_type_name
+            FROM workers w
+            LEFT JOIN worker_types wt ON w.worker_type_id = wt.id
+            ORDER BY w.id
         ''')
 
         workers = []
@@ -35,12 +38,12 @@ def get_workers():
                 'id': row[0],
                 'name': row[1],
                 'worker_type_id': row[2],
-                'worker_type': row[2],          
+                'worker_type': row[8],
                 'is_certified': row[3],
                 'organization': row[4],
                 'emp_id': row[5],
                 'compose': row[6],
-                'skill_level': row[7]              
+                'status': row[7]
             })
 
         conn.close()
@@ -67,7 +70,7 @@ def get_worker_types():
         c = conn.cursor()
 
         c.execute('''
-            SELECT id, name, description, requires_certification, created_at, price
+            SELECT id, name, description, requires_certification, created_at
             FROM worker_types
             ORDER BY id
         ''')
@@ -79,8 +82,7 @@ def get_worker_types():
                 'name': row[1],
                 'description': row[2],
                 'requires_certification': bool(row[3]),
-                'created_at': row[4],
-                'price': row[5]
+                'created_at': row[4]
             })
 
         conn.close()
@@ -113,10 +115,10 @@ def select_workers():
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
 
-        # 1. 从 workers 表获取选中的工人信息（增加 compose）
+        # 1. 从 workers 表获取选中的工人信息
         placeholders = ','.join('?' * len(selected_worker_ids))
         c.execute(f'''
-            SELECT id, name, worker_type_id, is_certified, organization, compose
+            SELECT id, name, worker_type_id, is_certified, organization
             FROM workers 
             WHERE id IN ({placeholders})
         ''', selected_worker_ids)
@@ -132,13 +134,13 @@ def select_workers():
         # 2. 清空 selected_workers 表
         c.execute('DELETE FROM selected_workers')
 
-        # 3. 将选中的工人插入 selected_workers 表（增加 compose 列）
+        # 3. 将选中的工人插入 selected_workers 表
         for worker in selected_workers:
-            worker_id, name, worker_type_id, is_certified, organization, compose = worker
+            worker_id, name, worker_type_id, is_certified, organization = worker
             c.execute('''
-                INSERT INTO selected_workers (id, name, worker_type_id, is_certified, organization, compose)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (worker_id, name, worker_type_id, is_certified, organization, compose))
+                INSERT INTO selected_workers (id, name, worker_type_id, is_certified, organization)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (worker_id, name, worker_type_id, is_certified, organization))
 
         conn.commit()
         conn.close()
@@ -217,7 +219,6 @@ def add_worker():
         is_certified = data.get('is_certified')
         organization = data.get('organization', '')
         compose = data.get('compose', '')  
-        skill_level = data.get('skill_level', 1)   
 
         if not worker_type or not worker_name:
             return jsonify({
@@ -229,11 +230,11 @@ def add_worker():
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
 
-        # 插入工人到数据库（增加 compose 列）
+        # 插入工人到数据库
         c.execute('''
-            INSERT INTO workers (worker_type_id, name, is_certified, organization, compose, skill_level)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (worker_type, worker_name,is_certified, organization, compose, skill_level))
+            INSERT INTO workers (worker_type_id, name, is_certified, organization, compose)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (worker_type, worker_name, is_certified, organization, compose))
 
         conn.commit()
         conn.close()
@@ -278,17 +279,16 @@ def batch_import_workers():
                 certified = worker.get('is_certified', False)
                 organization = worker.get('organization', '')
                 compose = worker.get('compose', '')   
-                skill_level = worker.get('skill_level', 1)   
 
                 if not worker_type or not worker_name:
                     error_messages.append(f"工人工种和工人名称不能为空: {worker}")
                     continue
 
-                # 插入工人到数据库（增加 compose 列）
+                # 插入工人到数据库
                 c.execute('''
-                    INSERT INTO workers (worker_type_id, name, is_certified, organization, compose, skill_level)
-                    VALUES (?, ?, ?, ?, ?,?)
-                ''', (worker_type, worker_name, certified, organization, compose, skill_level))
+                    INSERT INTO workers (worker_type_id, name, is_certified, organization, compose)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (worker_type, worker_name, certified, organization, compose))
 
                 success_count += 1
 

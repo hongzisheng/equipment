@@ -643,37 +643,33 @@ const openAddWorker = () => {
 }
 
 // 提交添加工人
-const submitAddWorker = () => {
-  const newWorker = {
-    id: Date.now(),
-    name: workerForm.name,
-    code: workerForm.code,
-    worker_type: workerForm.type,
-    type: workerForm.type,
-    status: workerForm.status,
-    category: getWorkerCategory(workerForm.type),
-    skills: workerForm.skills,
-    certification: workerForm.certification,
-    is_certified: workerForm.certification ? '是' : '否',
-    created_at: new Date().toISOString(),
+const submitAddWorker = async () => {
+  try {
+    const response = await fetch('/api/add-worker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        worker_type: workerForm.type,
+        worker_name: workerForm.name,
+        is_certified: workerForm.certification ? 1 : 0,
+        organization: '',
+        compose: ''
+      })
+    })
+    const result = await response.json()
+    if (result.success) {
+      ElMessage.success('工人添加成功')
+      addWorkerVisible.value = false
+      Object.keys(workerForm).forEach(key => { workerForm[key] = '' })
+      workerForm.status = '待命'
+      await fetchWorkers()
+    } else {
+      ElMessage.error(result.message || '添加失败')
+    }
+  } catch (e) {
+    console.error('添加工人失败:', e)
+    ElMessage.error('添加失败，请检查网络')
   }
-  
-  workers.value.push({
-    ...newWorker,
-    is_certified: formatCertifiedValue(newWorker.is_certified)
-  })
-  
-  addWorkerVisible.value = false
-  Object.keys(workerForm).forEach(key => {
-    workerForm[key] = ''
-  })
-  workerForm.status = '待命'
-  
-  ElMessage.success('工人添加成功')
-  
-  nextTick(() => {
-    selectAllWorkersGlobally()
-  })
 }
 
 // 导出选中的工人数据
@@ -713,33 +709,40 @@ const saveToLocalStorage = async () => {
 }
 
 // 删除选中的工人数据
-const deleteSelectedWorkers = () => {
+const deleteSelectedWorkers = async () => {
   if (selectedWorkers.value.length === 0) {
     ElMessage.warning('请先选择要删除的工人')
     return
   }
 
-  ElMessageBox.confirm(
-    `确定要删除选中的 ${selectedWorkers.value.length} 个工人吗？`,
-    '确认删除',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(() => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedWorkers.value.length} 个工人吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
     const selectedIds = selectedWorkers.value.map(worker => worker.id)
-    workers.value = workers.value.filter(worker => !selectedIds.includes(worker.id))
+    for (const id of selectedIds) {
+      const response = await fetch(`/api/workers/${id}`, { method: 'DELETE' })
+      const result = await response.json()
+      if (!result.success) {
+        console.error(`删除工人 ${id} 失败:`, result.message)
+      }
+    }
     
-    selectedWorkerIds.value = new Set([...selectedWorkerIds.value].filter(id => !selectedIds.includes(id)))
-    selectedWorkers.value = []
-    
-    ElMessage.success('删除成功')
-    
-    nextTick(() => {
-      selectAllWorkersGlobally()
-    })
-  }).catch(() => {})
+    ElMessage.success(`成功删除 ${selectedIds.length} 个工人`)
+    await fetchWorkers()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('删除工人失败:', e)
+      ElMessage.error('删除失败，请检查网络')
+    }
+  }
 }
 
 // 根据工种类型获取分类

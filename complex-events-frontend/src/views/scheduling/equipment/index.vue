@@ -154,7 +154,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
 const BASE = import.meta.env.VITE_APP_BASE_API || 'http://localhost:8800'
-const API = `${BASE}/scheduling`
+const API = `${BASE}/api`
 
 // 设备表格引用
 const deviceTableRef = ref(null)

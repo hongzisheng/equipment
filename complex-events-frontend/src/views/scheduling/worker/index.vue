@@ -260,6 +260,10 @@
 import { ref, computed, reactive, onMounted, nextTick} from 'vue'
 import { ArrowUpBold, ArrowDownBold, Plus, SuccessFilled, CircleCloseFilled, Edit } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import axios from 'axios'
+
+const BASE = import.meta.env.VITE_APP_BASE_API || 'http://localhost:8800'
+const API = `${BASE}/scheduling`
 
 // 工人表格引用
 const workerTableRef = ref(null)
@@ -305,13 +309,11 @@ const editPoolForm = reactive({
 const workerPoolData = ref([])
 const fetchWorkerPool = async () => {
   try {
-    console.log('fetchWorkerPool 开始执行');
-    const response = await fetch('/api/worker-team')
-    const result = await response.json()
-    if (result.success) {
-      workerPoolData.value = result.data
+    const res = await axios.get(`${API}/worker-team`)
+    if (res.data.success) {
+      workerPoolData.value = res.data.data
     } else {
-      console.error('获取工人池数据失败:', result.message)
+      console.error('获取工人池数据失败:', res.data.message)
     }
   } catch (error) {
     console.error('获取工人池数据异常:', error)
@@ -329,16 +331,12 @@ const openEditPoolDialog = () => {
 }
 const saveTeamCompose = async () => {
   try {
-    const response = await fetch('/api/worker-team', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        普工: editPoolForm.普工,
-        技工: editPoolForm.技工,
-        高级技工: editPoolForm.高级技工
-      })
+    const res = await axios.put(`${API}/worker-team`, {
+      普工: editPoolForm.普工,
+      技工: editPoolForm.技工,
+      高级技工: editPoolForm.高级技工
     })
-    const result = await response.json()
+    const result = res.data
     if (result.success) {
       ElMessage.success('班组配置已保存')
       editPoolDialogVisible.value = false
@@ -456,8 +454,8 @@ const workerForm = reactive({
 // 获取工人数据并动态生成表格列
 const fetchWorkers = async () => {
   try {
-    const response = await fetch('/api/workers')
-    const data = await response.json()
+    const res = await axios.get(`${API}/workers`)
+    const data = res.data
     console.log('获取工人数据成功:', data)
     
     if (data.success && data.workers && data.workers.length > 0) {
@@ -685,17 +683,11 @@ const saveToLocalStorage = async () => {
     const selectedWorkerIdsArray = Array.from(selectedWorkerIds.value);
     console.log('Sending selected worker IDs to backend:', selectedWorkerIdsArray);
     
-    const response = await fetch('/api/select-workers', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        selected_worker_ids: selectedWorkerIdsArray
-      })
+    const res = await axios.post(`${API}/select-workers`, {
+      selected_worker_ids: selectedWorkerIdsArray
     });
 
-    const result = await response.json();
+    const result = res.data;
     
     if (result.success) {
       ElMessage.success(result.message || '已成功将选中的工人发送到后端');

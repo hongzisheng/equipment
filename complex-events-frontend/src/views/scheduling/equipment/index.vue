@@ -151,6 +151,10 @@
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { ArrowUpBold, ArrowDownBold, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import axios from 'axios'
+
+const BASE = import.meta.env.VITE_APP_BASE_API || 'http://localhost:8800'
+const API = `${BASE}/scheduling`
 
 // 设备表格引用
 const deviceTableRef = ref(null)
@@ -349,8 +353,8 @@ const submitAddDevice = async () => {
 // 从后端获取设备数据
 const fetchDevices = async () => {
   try {
-    const response = await fetch('/api/equipment-instances')
-    const resData = await response.json()
+    const res = await axios.get(`${API}/equipment-instances`)
+    const resData = res.data
     const deviceList = resData.data || resData.equipment_instances
     console.log('Fetched device data from backend:', deviceList)
     if (resData.success && deviceList && deviceList.length > 0) {
@@ -408,17 +412,11 @@ const saveToBackend = async () => {
     const selectedDeviceIdsArray = Array.from(selectedDeviceIds.value)
     console.log('Sending selected device IDs to backend:', selectedDeviceIdsArray)
     
-    const response = await fetch('/api/select-equipments', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        selected_equipment_ids: selectedDeviceIdsArray
-      })
+    const response = await axios.post(`${API}/select-equipments`, {
+      selected_equipment_ids: selectedDeviceIdsArray
     })
 
-    const result = await response.json()
+    const result = response.data
     console.log('Backend response:', result)
     if (result.success) {
       ElMessage.success(result.message || '已成功将选中的设备发送到后端')

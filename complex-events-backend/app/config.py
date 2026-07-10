@@ -20,6 +20,14 @@ class Config:
     SQLITE_SUB_GRAPH_COLLECTION = os.environ.get("SQLITE_SUB_GRAPH_COLLECTION", "sub_graph")
     SQLITE_EVENT_LINK_RULES_COLLECTION = os.environ.get("SQLITE_EVENT_LINK_RULES_COLLECTION", "event_link_rules")
 
+    # ---- 智能问答 DashScope（OpenAI 兼容接口）----
+    DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY")
+    DASHSCOPE_API_URL = os.environ.get(
+        "DASHSCOPE_API_URL",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+    CHAT_MODEL = os.environ.get("CHAT_MODEL", "qwen-flash")
+
 
 class DevelopmentConfig(Config):
     DEBUG = True

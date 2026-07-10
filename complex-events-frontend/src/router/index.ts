@@ -175,7 +175,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/admin/flow',
         name: '流程确认',
-        component: EmptyPage,
+        component: () => import('@/views/ProcessConfirmation/index.vue'),
         meta: { title: '流程确认' },
       },
       {
@@ -184,11 +184,20 @@ export const constantRoutes: RouteItem[] = [
         component: EmptyPage,
         meta: { title: '信息面板' },
       },
+    ],
+  },
+  {
+    path: '/assistant',
+    component: () => import('@/layout/index.vue'),
+    redirect: '/assistant/qa',
+    name: 'AI助手',
+    meta: { title: 'AI助手' },
+    children: [
       {
-        path: '/admin/assistant',
-        name: 'AI助手',
-        component: EmptyPage,
-        meta: { title: 'AI助手' },
+        path: '/assistant/qa',
+        name: '智能问答',
+        component: () => import('@/views/SmartQA/index.vue'),
+        meta: { title: '智能问答' },
       },
     ],
   },

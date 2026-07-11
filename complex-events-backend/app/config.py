@@ -14,6 +14,9 @@ class Config:
 
     # SQLite: local document store to replace MongoDB.
     SQLITE_DB_PATH = os.environ.get("SQLITE_DB_PATH", os.path.join("database", "db.sqlite3"))
+    
+    # Original project database path for process confirmation and info panel
+    ORIGINAL_DB_PATH = os.environ.get("ORIGINAL_DB_PATH", r"F:\化工\Project\equipment\database\db.sqlite3")
     SQLITE_REPORTS_COLLECTION = os.environ.get("SQLITE_REPORTS_COLLECTION", "reports")
     SQLITE_EXTRACT_RESULT_COLLECTION = os.environ.get("SQLITE_EXTRACT_RESULT_COLLECTION", "extract_results")
     SQLITE_EVENT_LINK_COLLECTION = os.environ.get("SQLITE_EVENT_LINK_COLLECTION", "event_links")

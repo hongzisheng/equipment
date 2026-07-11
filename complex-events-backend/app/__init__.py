@@ -4,9 +4,8 @@ from logging.handlers import RotatingFileHandler
 
 from flask import Flask
 from flask_cors import CORS
-from pathlib import Path
 
-from app.blueprints import data_bp, user_bp, worker_bp, equipment_bp, chat_bp, workorder_mgmt_bp, parse_bp, tree_bp, process_bp, materials_bp, tools_bp
+from app.blueprints import data_bp, user_bp, process_bp, info_bp
 from app.extension import init_extensions
 from app.services.database_service import check_database_status
 
@@ -34,44 +33,32 @@ def configure_logging(app: Flask):
 def register_blueprints(app: Flask):
     app.register_blueprint(user_bp, url_prefix="/user")
     app.register_blueprint(data_bp, url_prefix="/data")
-    app.register_blueprint(worker_bp, url_prefix="/api")
-    app.register_blueprint(equipment_bp, url_prefix="/api")
-    app.register_blueprint(chat_bp)
-    app.register_blueprint(workorder_mgmt_bp)
-    app.register_blueprint(parse_bp)
-    app.register_blueprint(tree_bp)
-    app.register_blueprint(process_bp)
-    app.register_blueprint(materials_bp, url_prefix="/api")
-    app.register_blueprint(tools_bp, url_prefix="/api")
+    app.register_blueprint(process_bp, url_prefix="/process")
+    app.register_blueprint(info_bp, url_prefix="/info")
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):
-        app = Flask(__name__)
-        app.config.from_object(config_class)
-        
-        # 👇 这是我们新增的 2 行代码：动态计算并写入绝对路径
-        BASE_DIR = Path(__file__).resolve().parent.parent
-        app.config['DATABASE_URI'] = str(BASE_DIR / 'database' / 'db.sqlite3')
-        # 👆 新增结束
+    app = Flask(__name__)
+    app.config.from_object(config_class)
 
+    CORS(
+        app,
+        resources={
+            r"/*": {
+                "origins": ["http://localhost:8888", "http://localhost:8889", "http://localhost:5000", "http://localhost:5173"],
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "X-Token"],
+                "supports_credentials": True,
+            }
+        },
+    )
 
-        CORS(
-            app,
-            resources={
-                r"/*": {
-                    "origins": ["http://localhost:8888", "http://127.0.0.1:8888", "http://localhost:8889", "http://127.0.0.1:8889", "http://localhost:5000"],
-                    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                    "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "X-Token"],
-                    "supports_credentials": True,
-                }
-            },
-        )
+    init_extensions(app)
+    make_dirs(app)
+    configure_logging(app)
 
-        make_dirs(app)
-        configure_logging(app)
+    if not check_database_status(app):
+        raise RuntimeError("数据库连接失败，请检查 SQLite 配置。")
 
-        if not check_database_status(app):
-            raise RuntimeError("数据库连接失败，请检查 SQLite 配置。")
-
-        register_blueprints(app)
-        return app
+    register_blueprints(app)
+    return app

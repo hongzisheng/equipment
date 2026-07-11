@@ -251,3 +251,22 @@ def get_extract_result_collection():
 
 def get_event_link_collection():
     return get_collection(current_app.config.get("SQLITE_EVENT_LINK_COLLECTION", "event_links"))
+
+
+def get_sub_graph_collection():
+    return get_collection(current_app.config.get("SQLITE_SUB_GRAPH_COLLECTION", "sub_graph"))
+
+
+def get_event_link_rules_collection():
+    return get_collection(current_app.config.get("SQLITE_EVENT_LINK_RULES_COLLECTION", "event_link_rules"))
+
+
+def get_db_connection(db_path_key: str = "ORIGINAL_DB_PATH"):
+    if current_app is None:
+        raise RuntimeError("SQLite service has not been initialized with an application")
+    db_path = current_app.config.get(db_path_key)
+    if not db_path:
+        raise RuntimeError(f"{db_path_key} is not configured")
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn

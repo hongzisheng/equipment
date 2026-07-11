@@ -181,7 +181,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/admin/dashboard',
         name: '信息面板',
-        component: EmptyPage,
+        component: () => import('@/views/InfoPanel/index.vue'),
         meta: { title: '信息面板' },
       },
     ],
@@ -222,6 +222,11 @@ router.beforeEach(async (to, from, next) => {
   document.title = getPageTitle(to.meta.title)
   const hasToken = getToken()
   const userStore = useUserStore()
+  if (import.meta.env.DEV) {
+    next()
+    NProgress.done()
+    return
+  }
   if (hasToken) {
     if (to.path === '/login') {
       next({ path: '/' })

@@ -49,7 +49,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/worker/account',
         name: '工人台账',
-        component: EmptyPage,
+        component: () => import('@/views/worker/account/index.vue'),
         meta: { title: '工人台账' },
       },
     ],
@@ -64,7 +64,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/equipment/account',
         name: '设备台账',
-        component: EmptyPage,
+        component: () => import('@/views/equipment/account/index.vue'),
         meta: { title: '设备台账' },
       },
     ],
@@ -79,7 +79,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/tools/account',
         name: '维修机具台账',
-        component: EmptyPage,
+        component: () => import('@/views/tools/account/index.vue'),
         meta: { title: '维修机具台账' },
       },
     ],
@@ -94,7 +94,7 @@ export const constantRoutes: RouteItem[] = [
       {
         path: '/materials/account',
         name: '辅助材料台账',
-        component: EmptyPage,
+        component: () => import('@/views/materials/account/index.vue'),
         meta: { title: '辅助材料台账' },
       },
     ],

@@ -11,6 +11,7 @@ import traceback
 from flask import jsonify, request
 
 from . import workorder_mgmt_bp
+from app.models import Result
 from app.utils import get_db_connection
 
 
@@ -59,14 +60,15 @@ def get_work_orders():
 def get_work_order_tasks():
     """获取所有工单任务列表"""
     try:
-        with get_db_connection(row_factory=sqlite3.Row) as conn:
+        with get_db_connection() as conn:
             c = conn.cursor()
             c.execute(
                 """
-                SELECT id, work_order_id, task_code, process_id, process_code, process_name,
+                SELECT id, work_order_id, task_code, process_id, process_name,
                        equipment_id, equipment_name, description, estimated_hours,
                        scheduled_start_time, scheduled_end_time, actual_start_time,
                        actual_end_time, status, predecessor_task_ids, is_milestone,
+                       material_requirements, tools_requirements,
                        workers, approver_id, approval_comments, approved_at,
                        created_at, updated_at, attachment_path
                 FROM work_order_tasks
@@ -75,23 +77,23 @@ def get_work_order_tasks():
             )
             rows = c.fetchall()
             tasks = []
+            column_names = [desc[0] for desc in c.description]
             for row in rows:
-                task = dict(row)
-                for json_field in ["predecessor_task_ids", "workers"]:
+                task = dict(zip(column_names, row))
+                for json_field in ["predecessor_task_ids", "workers",
+                                   "material_requirements", "tools_requirements"]:
                     if task.get(json_field):
                         try:
                             task[json_field] = json.loads(task[json_field])
                         except (json.JSONDecodeError, TypeError):
                             pass
                     else:
-                        task[json_field] = []
+                        task[json_field] = {} if json_field in ("material_requirements", "tools_requirements") else []
                 task["is_milestone"] = bool(task["is_milestone"])
                 tasks.append(task)
-            return jsonify({"success": True, "data": tasks})
+            return Result.success(data=tasks, message="查询成功")
     except Exception as e:
-        return jsonify(
-            {"success": False, "error": str(e), "message": "获取工单任务列表失败"}
-        ), 500
+        return Result.fail(message=f"获取工单任务列表失败: {str(e)}")
 
 
 @workorder_mgmt_bp.route("/manual-create-work-order", methods=["POST"])

@@ -5,7 +5,7 @@
     <!-- 物料查询组件 -->
     <div class="material-search-container">
       <h3 class="search-title">物料查询</h3>
-      <el-form :model="searchForm" class="search-form" label-width="100px" size="medium">
+      <el-form :model="searchForm" class="search-form" label-width="100px" size="default">
         <el-form-item label="物料ID">
           <el-input 
             v-model="searchForm.id" 
@@ -46,8 +46,8 @@
           </div>
         </el-form-item>
         <el-form-item class="search-btn-group">
-          <el-button type="primary" size="medium" @click="handleSearch">查询</el-button>
-          <el-button size="medium" @click="resetSearch">重置</el-button>
+          <el-button type="primary" size="default" @click="handleSearch">查询</el-button>
+          <el-button size="default" @click="resetSearch">重置</el-button>
         </el-form-item>
       </el-form>
     </div>

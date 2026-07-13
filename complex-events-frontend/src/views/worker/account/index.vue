@@ -62,7 +62,7 @@
           />
         </el-form-item>
         <el-form-item class="search-btn-group">
-          <el-button type="primary" size="medium" @click="handleSearch">查询</el-button>
+          <el-button type="primary" size="default" @click="handleSearch">查询</el-button>
           <el-button size="default" @click="resetSearch">重置</el-button>
         </el-form-item>
       </el-form>

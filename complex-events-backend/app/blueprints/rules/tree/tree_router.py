@@ -14,7 +14,7 @@ def get_db_path():
 
 
 # ===================== 知识树相关API =====================
-@tree_bp.route('/api/graph-relations-archive', methods=['GET'])
+@tree_bp.route('/graph-relations-archive', methods=['GET'])
 def get_graph_relations_archive():
     """获取所有图关系数据（包含实体名称）"""
     try:

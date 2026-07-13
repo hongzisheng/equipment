@@ -20,8 +20,23 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8800',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        changeOrigin: true
+      },
+      '/user': {
+        target: 'http://localhost:8800',
+        changeOrigin: true
+      },
+      '/data': {
+        target: 'http://localhost:8800',
+        changeOrigin: true
+      },
+      '/process': {
+        target: 'http://localhost:8800',
+        changeOrigin: true
+      },
+      '/info': {
+        target: 'http://localhost:8800',
+        changeOrigin: true
       }
     }
   },

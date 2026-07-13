@@ -5,7 +5,7 @@
     <!-- 机具查询组件 -->
     <div class="tool-search-container">
       <h3 class="search-title">机具查询</h3>
-      <el-form :model="searchForm" class="search-form" label-width="100px" size="medium">
+      <el-form :model="searchForm" class="search-form" label-width="100px" size="default">
         <el-form-item label="机具编号">
           <el-input 
             v-model="searchForm.id" 
@@ -53,8 +53,8 @@
           </el-select>
         </el-form-item>
         <el-form-item class="search-btn-group">
-          <el-button type="primary" size="medium" @click="handleSearch">查询</el-button>
-          <el-button size="medium" @click="resetSearch">重置</el-button>
+          <el-button type="primary" size="default" @click="handleSearch">查询</el-button>
+          <el-button size="default" @click="resetSearch">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -742,38 +742,30 @@ async function confirmImport(data) {
     }
     
     // 发送POST请求到批量导入接口
-   await request({
-        url: '/api/batch-import-maintenance-tools',
-        method: 'post',
-        data: requestData
-      })
+    await request({
+      url: '/api/batch-import-maintenance-tools',
+      method: 'post',
+      data: requestData
+    })
     
-    if (response.success) {
-      // 导入成功处理
-      uploading.value = false
-      tipType.value = 'success'
-      tipMessage.value = '批量导入成功'
-      tipVisible.value = true
-      progressPercent.value = 100
-      progressStatus.value = 'success'
-      ElMessage.success('批量导入成功')
-      
-      // 3秒后自动隐藏成功提示
-      setTimeout(() => {
-        tipVisible.value = false
-        progressVisible.value = false
-      }, 1500)
-      
-      // 重置状态
-      selectedFile.value = null
-      selectedFileName.value = ''
-      excelEditorVisible.value = false
-      
-      // 重新获取机具数据
-      await fetchTools()
-    } else {
-      throw new Error(response.message || '导入失败')
-    }
+    uploading.value = false
+    tipType.value = 'success'
+    tipMessage.value = '批量导入成功'
+    tipVisible.value = true
+    progressPercent.value = 100
+    progressStatus.value = 'success'
+    ElMessage.success('批量导入成功')
+    
+    setTimeout(() => {
+      tipVisible.value = false
+      progressVisible.value = false
+    }, 1500)
+    
+    selectedFile.value = null
+    selectedFileName.value = ''
+    excelEditorVisible.value = false
+    
+    await fetchTools()
   } catch (error) {
     // 导入失败处理
     uploading.value = false
@@ -873,20 +865,15 @@ async function addTool() {
       requires_operator: Boolean(newTool.requires_operator)
     }
     
-     await request({
-        url: '/api/maintenance-tools',
-        method: 'post',
-        data: toolData
-      })
+    await request({
+      url: '/api/maintenance-tools',
+      method: 'post',
+      data: toolData
+    })
     
-    if (response.success) {
-      ElMessage.success('机具添加成功')
-      addDialogVisible.value = false
-      // 重新获取机具数据以刷新表格
-      await fetchTools()
-    } else {
-      ElMessage.error('添加机具失败: ' + (response.message || '未知错误'))
-    }
+    ElMessage.success('机具添加成功')
+    addDialogVisible.value = false
+    await fetchTools()
   } catch (error) {
     ElMessage.error('添加机具失败: ' + (error.message || '未知错误'))
   }

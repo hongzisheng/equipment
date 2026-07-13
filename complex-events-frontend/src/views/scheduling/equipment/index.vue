@@ -153,7 +153,7 @@ import { ArrowUpBold, ArrowDownBold, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
-const BASE = import.meta.env.VITE_APP_BASE_API || 'http://localhost:8800'
+const BASE = import.meta.env.VITE_APP_BASE_API || ''
 const API = `${BASE}/api`
 
 // 设备表格引用

@@ -6,7 +6,7 @@
       size="small"
       height="62vh"
       style="width: 100%"
-      @row-click="handleRowClick"
+      @row-click="handleRowClick($event, row)"
       :row-class-name="getRowClassName"
       :cell-style="getCellStyle"
       highlight-current-row
@@ -113,7 +113,11 @@ defineProps({
   }
 })
 
-defineEmits(['view-detail', 'confirm', 'reject'])
+const emit = defineEmits(['view-detail', 'confirm', 'reject'])
+
+function handleRowClick(event, row) {
+  emit('view-detail', row)
+}
 </script>
 
 <style scoped>

@@ -5,7 +5,7 @@
     <!-- 设备查询组件 -->
     <div class="equipment-search-container">
       <h3 class="search-title">设备查询</h3>
-      <el-form :model="searchForm" class="search-form" label-width="120px" size="medium">
+      <el-form :model="searchForm" class="search-form" label-width="120px" size="default">
         <el-form-item label="设备分类">
           <el-select 
             v-model="searchForm.category" 
@@ -63,8 +63,8 @@
           />
         </el-form-item>
         <el-form-item class="search-btn-group">
-          <el-button type="primary" size="medium" @click="handleSearch">查询</el-button>
-          <el-button size="medium" @click="handleResetSearch">重置</el-button>
+          <el-button type="primary" size="default" @click="handleSearch">查询</el-button>
+          <el-button size="default" @click="handleResetSearch">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -147,7 +147,7 @@
         <el-tree
           :data="filteredTreeData"
           node-key="id"
-          default-expanded-keys="[1]"
+          :default-expanded-keys="[1]"
           @node-click="handleNodeClick"
           :props="defaultProps"
           class="custom-tree"

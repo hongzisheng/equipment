@@ -262,7 +262,7 @@ import { ArrowUpBold, ArrowDownBold, Plus, SuccessFilled, CircleCloseFilled, Edi
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
-const BASE = import.meta.env.VITE_APP_BASE_API || 'http://localhost:8800'
+const BASE = import.meta.env.VITE_APP_BASE_API || ''
 const API = `${BASE}/api`
 
 // 工人表格引用

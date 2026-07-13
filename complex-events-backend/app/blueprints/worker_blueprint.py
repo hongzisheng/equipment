@@ -17,32 +17,31 @@ worker_bp = Blueprint("worker", __name__)
 @worker_bp.route("/workers", methods=["GET"])
 def get_workers():
     try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT id, name, worker_type_id, is_certified, organization,
-                   emp_id, compose, created_time
-            FROM workers
-            ORDER BY id
-            """
-        )
-        workers = []
-        for row in c.fetchall():
-            workers.append(
-                {
-                    "id": row[0],
-                    "name": row[1],
-                    "worker_type_id": row[2],
-                    "worker_type": row[2],  # worker_type_id is the type name
-                    "is_certified": row[3],
-                    "organization": row[4] or "",
-                    "emp_id": row[5],
-                    "compose": row[6] or "",
-                    "created_time": row[7],
-                }
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT id, name, worker_type_id, is_certified, organization,
+                       emp_id, compose, created_time
+                FROM workers
+                ORDER BY id
+                """
             )
-        conn.close()
+            workers = []
+            for row in c.fetchall():
+                workers.append(
+                    {
+                        "id": row[0],
+                        "name": row[1],
+                        "worker_type_id": row[2],
+                        "worker_type": row[2],  # worker_type_id is the type name
+                        "is_certified": row[3],
+                        "organization": row[4] or "",
+                        "emp_id": row[5],
+                        "compose": row[6] or "",
+                        "created_time": row[7],
+                    }
+                )
         return Result.success(
             data={"workers": workers, "total_count": len(workers)},
             message="查询成功",
@@ -68,18 +67,17 @@ def add_worker():
             return Result.fail(message="工人工种和工人名称不能为空")
 
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute(
-            """
-            INSERT INTO workers
-                (worker_type_id, name, is_certified, organization, compose, created_time)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (worker_type, worker_name, int(is_certified), organization, compose, now),
-        )
-        conn.commit()
-        conn.close()
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                INSERT INTO workers
+                    (worker_type_id, name, is_certified, organization, compose, created_time)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (worker_type, worker_name, int(is_certified), organization, compose, now),
+            )
+            conn.commit()
 
         return Result.success(message=f"工人 {worker_name}({worker_type}) 添加成功")
     except Exception as e:
@@ -94,44 +92,40 @@ def update_worker(worker_id):
     try:
         data = request.get_json()
 
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT name FROM workers WHERE id = ?", (worker_id,))
-        row = c.fetchone()
-        if not row:
-            conn.close()
-            return Result.fail(message="工人不存在")
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT name FROM workers WHERE id = ?", (worker_id,))
+            row = c.fetchone()
+            if not row:
+                return Result.fail(message="工人不存在")
 
-        allowed_fields = {
-            "name": str,
-            "worker_type": str,
-            "is_certified": lambda v: 1 if v == "是" or v == 1 or v is True else 0,
-            "organization": str,
-            "compose": str,
-        }
-        updates = {}
-        for field, cast in allowed_fields.items():
-            if field in data and data[field] is not None:
-                try:
-                    updates[field] = cast(data[field])
-                except (ValueError, TypeError):
-                    conn.close()
-                    return Result.fail(message=f"{field} 格式不正确")
+            allowed_fields = {
+                "name": str,
+                "worker_type": str,
+                "is_certified": lambda v: 1 if v == "是" or v == 1 or v is True else 0,
+                "organization": str,
+                "compose": str,
+            }
+            updates = {}
+            for field, cast in allowed_fields.items():
+                if field in data and data[field] is not None:
+                    try:
+                        updates[field] = cast(data[field])
+                    except (ValueError, TypeError):
+                        return Result.fail(message=f"{field} 格式不正确")
 
-        # Map worker_type → worker_type_id column
-        if "worker_type" in updates:
-            updates["worker_type_id"] = updates.pop("worker_type")
+            # Map worker_type → worker_type_id column
+            if "worker_type" in updates:
+                updates["worker_type_id"] = updates.pop("worker_type")
 
-        if not updates:
-            conn.close()
-            return Result.fail(message="没有可更新的字段")
+            if not updates:
+                return Result.fail(message="没有可更新的字段")
 
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
-        values = list(updates.values()) + [worker_id]
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            values = list(updates.values()) + [worker_id]
 
-        c.execute(f"UPDATE workers SET {set_clause} WHERE id = ?", values)
-        conn.commit()
-        conn.close()
+            c.execute(f"UPDATE workers SET {set_clause} WHERE id = ?", values)
+            conn.commit()
 
         return Result.success(message=f"工人 {row[0]} 更新成功")
     except Exception as e:
@@ -144,20 +138,18 @@ def update_worker(worker_id):
 @worker_bp.route("/workers/<int:worker_id>", methods=["DELETE"])
 def delete_worker(worker_id):
     try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute(
-            "SELECT name, worker_type_id FROM workers WHERE id = ?", (worker_id,)
-        )
-        row = c.fetchone()
-        if not row:
-            conn.close()
-            return Result.fail(message="工人不存在")
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT name, worker_type_id FROM workers WHERE id = ?", (worker_id,)
+            )
+            row = c.fetchone()
+            if not row:
+                return Result.fail(message="工人不存在")
 
-        worker_name, worker_type = row[0], row[1]
-        c.execute("DELETE FROM workers WHERE id = ?", (worker_id,))
-        conn.commit()
-        conn.close()
+            worker_name, worker_type = row[0], row[1]
+            c.execute("DELETE FROM workers WHERE id = ?", (worker_id,))
+            conn.commit()
 
         return Result.success(message=f"工人 {worker_name}({worker_type}) 删除成功")
     except Exception as e:
@@ -176,50 +168,49 @@ def batch_import_workers():
         if not workers_list:
             return Result.fail(message="工人列表不能为空")
 
-        conn = get_db_connection()
-        c = conn.cursor()
+        with get_db_connection() as conn:
+            c = conn.cursor()
 
-        success_count = 0
-        error_messages = []
+            success_count = 0
+            error_messages = []
 
-        for worker in workers_list:
-            try:
-                worker_type = worker.get("worker_type")
-                worker_name = worker.get("worker_name")
-                certified = worker.get("is_certified", False)
-                organization = worker.get("organization", "")
-                compose = worker.get("compose", "")
+            for worker in workers_list:
+                try:
+                    worker_type = worker.get("worker_type")
+                    worker_name = worker.get("worker_name")
+                    certified = worker.get("is_certified", False)
+                    organization = worker.get("organization", "")
+                    compose = worker.get("compose", "")
 
-                if not worker_type or not worker_name:
-                    error_messages.append(
-                        f"工人工种和工人名称不能为空: {worker}"
+                    if not worker_type or not worker_name:
+                        error_messages.append(
+                            f"工人工种和工人名称不能为空: {worker}"
+                        )
+                        continue
+
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    c.execute(
+                        """
+                        INSERT INTO workers
+                            (worker_type_id, name, is_certified, organization, compose, created_time)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            worker_type,
+                            worker_name,
+                            int(certified) if certified else 0,
+                            organization,
+                            compose,
+                            now,
+                        ),
                     )
-                    continue
+                    success_count += 1
+                except Exception as e:
+                    error_messages.append(
+                        f"工人 {worker.get('worker_name', '未知')} 导入失败: {str(e)}"
+                    )
 
-                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                c.execute(
-                    """
-                    INSERT INTO workers
-                        (worker_type_id, name, is_certified, organization, compose, created_time)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        worker_type,
-                        worker_name,
-                        int(certified) if certified else 0,
-                        organization,
-                        compose,
-                        now,
-                    ),
-                )
-                success_count += 1
-            except Exception as e:
-                error_messages.append(
-                    f"工人 {worker.get('worker_name', '未知')} 导入失败: {str(e)}"
-                )
-
-        conn.commit()
-        conn.close()
+            conn.commit()
 
         return Result.success(
             data={

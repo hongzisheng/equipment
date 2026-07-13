@@ -185,7 +185,7 @@ const displayResults = computed(() => {
 async function loadCategories() {
   try {
     const res = await apiRequest('/api/equipment-categories')
-    categoryOptions.value = res.success ? (res.data || []) : []
+    categoryOptions.value = res.code === 20000 || res.success ? (res.data || []) : []
   } catch (e) {
     categoryOptions.value = []
     ElMessage.error('加载设备类型失败')
@@ -198,7 +198,7 @@ async function loadDevices(categoryId = '') {
     let url = '/api/equipment-types'
     if (categoryId) url += `?category=${encodeURIComponent(categoryId)}`
     const res = await apiRequest(url)
-    if (res.success) {
+    if (res.code === 20000 || res.success) {
       deviceOptions.value = (res.data || []).map(item => ({ name: item.name }))
     } else {
       deviceOptions.value = []

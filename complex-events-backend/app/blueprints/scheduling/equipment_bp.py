@@ -4,7 +4,7 @@ import datetime
 from app.models import Result
 from app.utils import get_db_connection
 
-equipment_bp = Blueprint('equipment', __name__)
+equipment_bp = Blueprint('scheduling_equipment', __name__)
 
 
 @equipment_bp.route('/equipment-categories', methods=['GET'])

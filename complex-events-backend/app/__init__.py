@@ -5,7 +5,13 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask
 from flask_cors import CORS
 
-from app.blueprints import data_bp, user_bp, process_bp, info_bp
+from app.blueprints import (
+    data_bp, user_bp, process_bp, info_bp,
+    worker_bp, equipment_bp, tools_bp, materials_bp,
+    scheduling_worker_bp, scheduling_equipment_bp,
+    rules_process_bp, parse_blueprint, tree_bp, chat_bp,
+    workorder_mgmt_bp
+)
 from app.extension import init_extensions
 from app.services.database_service import check_database_status
 
@@ -35,6 +41,17 @@ def register_blueprints(app: Flask):
     app.register_blueprint(data_bp, url_prefix="/data")
     app.register_blueprint(process_bp, url_prefix="/process")
     app.register_blueprint(info_bp, url_prefix="/info")
+    app.register_blueprint(worker_bp, url_prefix="/api")
+    app.register_blueprint(equipment_bp, url_prefix="/api")
+    app.register_blueprint(tools_bp, url_prefix="/api")
+    app.register_blueprint(materials_bp, url_prefix="/api")
+    app.register_blueprint(scheduling_worker_bp, url_prefix="/api")
+    app.register_blueprint(scheduling_equipment_bp, url_prefix="/api")
+    app.register_blueprint(rules_process_bp, url_prefix="/api")
+    app.register_blueprint(parse_blueprint, url_prefix="/api")
+    app.register_blueprint(tree_bp, url_prefix="/api")
+    app.register_blueprint(chat_bp)
+    app.register_blueprint(workorder_mgmt_bp)
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):
@@ -45,7 +62,7 @@ def create_app(config_class="app.config.DevelopmentConfig"):
         app,
         resources={
             r"/*": {
-                "origins": ["http://localhost:8888", "http://localhost:8889", "http://localhost:5000", "http://localhost:5173"],
+                "origins": "*",
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "X-Token"],
                 "supports_credentials": True,

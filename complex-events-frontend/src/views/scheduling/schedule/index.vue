@@ -99,7 +99,7 @@
         <el-tree
           :data="filteredTreeData"
           node-key="id"
-          default-expanded-keys="[1]"
+          :default-expanded-keys="[1]"
           @node-click="handleNodeClick"
           :props="defaultProps"
           class="custom-tree"
@@ -532,7 +532,7 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
-const BASE_URL = `${import.meta.env.VITE_APP_BASE_API || 'http://localhost:8800'}/api`
+const BASE_URL = `${import.meta.env.VITE_APP_BASE_API || ''}/api`
 
 // =================== 调度控制面板状态 ===================
 const selectedWorkOrders = ref([])

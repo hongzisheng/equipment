@@ -4,7 +4,7 @@ import datetime
 from pathlib import Path
 from functools import wraps
 import json
-process_bp = Blueprint('process', __name__, url_prefix='/api')
+process_bp = Blueprint('rules_process', __name__)
 def get_db_path():
     """统一获取数据库路径"""
     base_dir = Path(__file__).resolve().parent.parent.parent.parent.parent

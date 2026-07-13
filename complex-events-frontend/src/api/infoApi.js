@@ -1,33 +1,32 @@
-import { mockWorkers, mockOrders, mockMaterials, mockTools } from './mockData';
+import request from '@/utils/request.js'
 
 export function getWorkerStatus(data) {
-  return Promise.resolve({
-    code: 20000,
-    message: '查询成功',
-    data: mockWorkers
-  });
+  return request({
+    url: '/info/workers',
+    method: 'post',
+    data: data
+  })
 }
 
 export function getOrders() {
-  return Promise.resolve({
-    code: 20000,
-    message: '查询成功',
-    data: mockOrders
-  });
+  return request({
+    url: '/info/orders',
+    method: 'get'
+  })
 }
 
 export function getMaterialInventory(data) {
-  return Promise.resolve({
-    code: 20000,
-    message: '查询成功',
-    data: mockMaterials
-  });
+  return request({
+    url: '/info/materials',
+    method: 'post',
+    data: data
+  })
 }
 
 export function getMaintenanceTools(data) {
-  return Promise.resolve({
-    code: 20000,
-    message: '查询成功',
-    data: mockTools
-  });
+  return request({
+    url: '/info/tools',
+    method: 'post',
+    data: data
+  })
 }

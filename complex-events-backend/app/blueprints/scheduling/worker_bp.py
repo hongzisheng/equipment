@@ -4,7 +4,7 @@ import datetime
 from app.models import Result
 from app.utils import get_db_connection
 
-worker_bp = Blueprint('worker', __name__, url_prefix='/api')
+worker_bp = Blueprint('scheduling_worker', __name__)
 
 
 @worker_bp.route('/workers', methods=['GET'])

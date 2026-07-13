@@ -4,15 +4,24 @@
 解决多个 blueprint 中重复定义 get_db_path 函数的问题，
 同时提供安全的连接上下文管理器确保连接正确关闭。
 """
+import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Generator, Any
 
 
-def get_db_path():
-    """获取 SQLite 数据库路径"""
+def get_db_path() -> str:
+    """获取 SQLite 数据库路径（确保返回绝对路径）"""
     from app.config import Config
-    return Config.SQLITE_DB_PATH
+    db_path = Config.SQLITE_DB_PATH
+    if not os.path.isabs(db_path):
+        from flask import current_app
+        try:
+            project_root = os.path.abspath(os.path.join(current_app.root_path, ".."))
+            db_path = os.path.normpath(os.path.join(project_root, db_path))
+        except RuntimeError:
+            db_path = os.path.normpath(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), db_path))
+    return db_path
 
 
 @contextmanager
@@ -33,7 +42,9 @@ def get_db_connection(row_factory: Any = None) -> Generator[sqlite3.Connection, 
     """
     conn = None
     try:
-        conn = sqlite3.connect(str(get_db_path()))
+        db_path = get_db_path()
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        conn = sqlite3.connect(db_path, check_same_thread=False)
         if row_factory is not None:
             conn.row_factory = row_factory
         yield conn

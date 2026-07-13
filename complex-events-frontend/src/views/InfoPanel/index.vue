@@ -3,7 +3,7 @@
     <el-card class="panel-card" shadow="hover">
       <div class="panel-header">
         <div class="panel-title">
-          <img src="/src/assets/iconfont/任务管理.png" alt="信息面板" class="panel-icon mr6" />
+          <el-icon class="panel-icon"><DataBoard /></el-icon>
           信息面板
         </div>
       </div>
@@ -39,6 +39,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch, nextTick } from 'vue'
+import { DataBoard } from '@element-plus/icons-vue'
 import TimePeriodSelector from './components/TimePeriodSelector.vue'
 import WorkerStatusPanel from './components/WorkerStatusPanel.vue'
 import MaterialBoard from './components/MaterialBoard.vue'

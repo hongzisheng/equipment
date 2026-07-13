@@ -1,0 +1,127 @@
+// /src/store/modules/user.js
+import { defineStore } from 'pinia'
+import { login as loginApi, logout as logoutApi, getInfo as getInfoApi } from '@/api/user'
+import { getToken, setToken, removeToken } from '@/utils/auth'
+import { computed, ref } from 'vue'
+
+const getDefaultState = () => {
+  return {
+    token: getToken(),
+    name: '',
+    avatar: '',
+  }
+}
+
+export const useUserStore = defineStore(
+  'user',
+  () => {
+    // state
+    const token = ref(getToken())
+    const name = ref('')
+    const avatar = ref('')
+
+    // actions
+    function resetState() {
+      const defaultState = getDefaultState()
+      token.value = defaultState.token
+      name.value = defaultState.name
+      avatar.value = defaultState.avatar
+    }
+
+    function setTokenAction(tokenValue) {
+      token.value = tokenValue
+    }
+
+    function setName(nameValue) {
+      name.value = nameValue
+    }
+
+    function setAvatar(avatarValue) {
+      avatar.value = avatarValue
+    }
+
+    // user login
+    async function login(userInfo) {
+      const { username, password } = userInfo
+      return new Promise((resolve, reject) => {
+        loginApi({ username: username.trim(), password: password })
+          .then((response) => {
+            const { data } = response
+            setTokenAction(data.token)
+            setToken(data.token)
+            resolve()
+          })
+          .catch((error) => {
+            reject(error)
+          })
+      })
+    }
+
+    // get user info
+    function getInfo() {
+      return new Promise((resolve, reject) => {
+        getInfoApi(token.value)
+          .then((response) => {
+            const { data } = response
+
+            if (!data) {
+              reject('Verification failed, please Login again.')
+            }
+
+            const { name: userName, avatar: userAvatar } = data
+
+            setName(userName)
+            setAvatar(userAvatar)
+            resolve(data)
+          })
+          .catch((error) => {
+            reject(error)
+          })
+      })
+    }
+
+    // user logout
+    function logout() {
+      return new Promise((resolve, reject) => {
+        logoutApi(token.value)
+          .then(() => {
+            removeToken() // must remove token first
+            resetRouter()
+            resetState()
+            resolve()
+          })
+          .catch((error) => {
+            reject(error)
+          })
+      })
+    }
+
+    // remove token
+    function resetToken() {
+      return new Promise((resolve) => {
+        removeToken() // must remove token first
+        resetState()
+        resolve()
+      })
+    }
+
+    const nameGetter = computed(() => name.value)
+    const avatarGetter = computed(() => avatar.value)
+    const tokenGetter = computed(() => token.value)
+    return {
+      // getter
+      token: tokenGetter,
+      name: nameGetter,
+      avatar: avatarGetter,
+
+      // actions
+      login,
+      getInfo,
+      logout,
+      resetToken,
+    }
+  },
+  {
+    persist: true,
+  },
+)

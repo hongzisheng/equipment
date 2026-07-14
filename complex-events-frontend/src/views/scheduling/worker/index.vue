@@ -3,7 +3,7 @@
     <el-card class="panel-card" shadow="hover">
       <div class="panel-header" @click="togglePanel('worker')">
         <div class="panel-title">
-          <img src="/src/assets/工人管理.png" alt="工人管理" class="panel-icon mr6" />
+          <img src="/src/assets/iconfont/工人管理.png" alt="工人管理" class="panel-icon mr6" />
           工人管理
         </div>
         <div class="panel-tools" @click.stop>
@@ -458,14 +458,14 @@ const fetchWorkers = async () => {
     const data = res.data
     console.log('获取工人数据成功:', data)
     
-    if (data.success && data.workers && data.workers.length > 0) {
-      workers.value = data.workers.map(worker => {
+    if (data.success && data.data && data.data.workers && data.data.workers.length > 0) {
+      workers.value = data.data.workers.map(worker => {
         return {
           ...worker,
           is_certified: formatCertifiedValue(worker.is_certified)
         }
       })
-      generateTableColumns(data.workers[0])
+      generateTableColumns(data.data.workers[0])
       nextTick(() => {
         selectAllWorkersGlobally()
       })

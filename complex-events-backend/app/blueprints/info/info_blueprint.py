@@ -18,7 +18,7 @@ def get_workers():
                     w.name,
                     w.worker_type_id AS role,
                     w.status,
-                    w.organization,
+                    w.organization
                 FROM workers w
                 ORDER BY w.id
             """)
@@ -33,11 +33,7 @@ def get_workers():
                     "role": row["role"],
                     "status": "工作中" if row["status"] == "1" else ("空闲中" if row["status"] == "0" else row["status"]),
                     "organization": row["organization"],
-<<<<<<< HEAD
-                    "skill_level": row["skill_level"],
-=======
                     "skill_level": "高级",
->>>>>>> c589649ceb11edd98eb5b9fff54865511d861051
                     "tasks": []
                 })
             

@@ -764,7 +764,7 @@ const buildTree = (categories, types, relations) => {
       if (n.children) collectNodesByDepth(n.children, targetDepth)
     })
   }
-  categoryNodes.value.forEach(cat => collectNodesByDepth(cat.children || [], 4))
+  categoryNodes.value.forEach(cat => collectNodesByDepth(cat.children || [], 3))
   collapsedNodeIds.value = defaultCollapsed
 }
 // 缓存操作

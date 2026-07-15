@@ -1,42 +1,12 @@
-"""Worker scheduling & CRUD API blueprint."""
+"""Worker scheduling API blueprint."""
 from flask import Blueprint, request
-import datetime
 from app.models import Result
 from app.utils import get_db_connection
 
-worker_bp = Blueprint('scheduling_worker', __name__)
+scheduling_worker_bp = Blueprint('scheduling_worker', __name__)
 
 
-@worker_bp.route('/workers', methods=['GET'])
-def get_workers():
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            c.execute('''
-                SELECT w.id, w.name, w.worker_type_id, w.is_certified,
-                       w.organization, w.emp_id, w.compose, w.status,
-                       COALESCE(wt.name, w.worker_type_id) AS worker_type_name
-                FROM workers w
-                LEFT JOIN worker_types wt ON w.worker_type_id = wt.id
-                ORDER BY w.id
-            ''')
-            workers = []
-            for row in c.fetchall():
-                workers.append({
-                    'id': row[0], 'name': row[1], 'worker_type_id': row[2],
-                    'worker_type': row[8], 'is_certified': row[3],
-                    'organization': row[4], 'emp_id': row[5],
-                    'compose': row[6], 'status': row[7]
-                })
-        return Result.success(
-            data={"workers": workers, "total_count": len(workers)},
-            message="查询成功",
-        )
-    except Exception as e:
-        return Result.fail(message=f"获取工人信息失败: {str(e)}")
-
-
-@worker_bp.route('/worker-types', methods=['GET'])
+@scheduling_worker_bp.route('/worker-types', methods=['GET'])
 def get_worker_types():
     try:
         with get_db_connection() as conn:
@@ -53,7 +23,7 @@ def get_worker_types():
         return Result.fail(message=f"获取工种信息失败: {str(e)}")
 
 
-@worker_bp.route('/select-workers', methods=['POST'])
+@scheduling_worker_bp.route('/select-workers', methods=['POST'])
 def select_workers():
     try:
         data = request.get_json()
@@ -84,7 +54,7 @@ def select_workers():
         return Result.fail(message=f"设置选中工人失败: {str(e)}")
 
 
-@worker_bp.route('/selected-workers', methods=['GET'])
+@scheduling_worker_bp.route('/selected-workers', methods=['GET'])
 def get_selected_workers():
     try:
         with get_db_connection() as conn:
@@ -104,83 +74,7 @@ def get_selected_workers():
         return Result.fail(message=f"获取选中工人失败: {str(e)}")
 
 
-@worker_bp.route('/add-worker', methods=['POST'])
-def add_worker():
-    try:
-        data = request.get_json()
-        worker_type = data.get('worker_type')
-        worker_name = data.get('worker_name')
-        is_certified = data.get('is_certified')
-        organization = data.get('organization', '')
-        compose = data.get('compose', '')
-
-        if not worker_type or not worker_name:
-            return Result.fail(message="工人工种和工人名称不能为空")
-
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            c.execute(
-                'INSERT INTO workers (worker_type_id, name, is_certified, organization, compose) VALUES (?, ?, ?, ?, ?)',
-                (worker_type, worker_name, is_certified, organization, compose),
-            )
-        return Result.success(message=f"工人 {worker_name}({worker_type}) 添加成功")
-    except Exception as e:
-        return Result.fail(message=f"添加工人失败: {str(e)}")
-
-
-@worker_bp.route('/batch-import-workers', methods=['POST'])
-def batch_import_workers():
-    try:
-        data = request.get_json()
-        workers_list = data.get('workers_list', [])
-        if not workers_list:
-            return Result.fail(message="工人列表不能为空")
-
-        success_count, error_messages = 0, []
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            for worker in workers_list:
-                try:
-                    worker_type = worker.get('worker_type')
-                    worker_name = worker.get('worker_name')
-                    certified = worker.get('is_certified', False)
-                    organization = worker.get('organization', '')
-                    compose = worker.get('compose', '')
-                    if not worker_type or not worker_name:
-                        error_messages.append(f"工人工种和工人名称不能为空: {worker}")
-                        continue
-                    c.execute(
-                        'INSERT INTO workers (worker_type_id, name, is_certified, organization, compose) VALUES (?, ?, ?, ?, ?)',
-                        (worker_type, worker_name, certified, organization, compose),
-                    )
-                    success_count += 1
-                except Exception as e:
-                    error_messages.append(f"工人 {worker.get('worker_name', '未知')} 导入失败: {str(e)}")
-
-        return Result.success(
-            data={"success_count": success_count, "error_count": len(error_messages), "errors": error_messages},
-            message=f"成功导入 {success_count} 个工人",
-        )
-    except Exception as e:
-        return Result.fail(message=f"批量导入工人失败: {str(e)}")
-
-
-@worker_bp.route('/workers/<int:worker_id>', methods=['DELETE'])
-def delete_worker(worker_id):
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            c.execute('SELECT name, worker_type_id FROM workers WHERE id = ?', (worker_id,))
-            row = c.fetchone()
-            if not row:
-                return Result.fail(message="工人不存在")
-            c.execute('DELETE FROM workers WHERE id = ?', (worker_id,))
-        return Result.success(message=f"工人 {row[0]}({row[1]}) 删除成功")
-    except Exception as e:
-        return Result.fail(message=f"删除工人失败: {str(e)}")
-
-
-@worker_bp.route('/worker-team', methods=['GET'])
+@scheduling_worker_bp.route('/worker-team', methods=['GET'])
 def get_worker_team():
     try:
         with get_db_connection() as conn:
@@ -195,7 +89,7 @@ def get_worker_team():
         return Result.fail(message=f"获取工人池数据失败: {str(e)}")
 
 
-@worker_bp.route('/worker-team', methods=['PUT'])
+@scheduling_worker_bp.route('/worker-team', methods=['PUT'])
 def update_worker_team():
     try:
         data = request.get_json()

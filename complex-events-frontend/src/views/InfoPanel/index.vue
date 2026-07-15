@@ -74,25 +74,37 @@ const refreshData = async () => {
       end_time: `第${searchForm.endDay}天 ${searchForm.endTime}`
     })
     workers.value = workersResponse.data.worker_status
+  } catch (error) {
+    console.error('获取工作人员状态失败:', error)
+  }
 
+  try {
     const ordersResponse = await getOrders()
     orders.value = ordersResponse.data.data
+  } catch (error) {
+    console.error('获取工单失败:', error)
+  }
 
+  try {
     const materialsResponse = await getMaterialInventory({
       end_time: `第${searchForm.endDay}天 ${searchForm.endTime}`
     })
     materials.value = materialsResponse.data.material_inventory
+  } catch (error) {
+    console.error('获取物料库存失败:', error)
+  }
 
+  try {
     const toolsResponse = await getMaintenanceTools({
       start_time: `第${searchForm.startDay}天 ${searchForm.startTime}`,
       end_time: `第${searchForm.endDay}天 ${searchForm.endTime}`
     })
     tools.value = toolsResponse.data.maintenance_tool_status
   } catch (error) {
-    console.error('获取数据失败:', error)
-  } finally {
-    loading.value = false
+    console.error('获取维修器具失败:', error)
   }
+
+  loading.value = false
 }
 
 const handleTimeChange = (timeRange) => {

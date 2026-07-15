@@ -21,10 +21,13 @@ def get_workers():
             c = conn.cursor()
             c.execute(
                 """
-                SELECT id, name, worker_type_id, is_certified, organization,
-                       emp_id, compose, created_time
-                FROM workers
-                ORDER BY id
+                SELECT w.id, w.name, w.worker_type_id, w.is_certified,
+                       w.organization, w.emp_id, w.compose, w.created_time,
+                       w.status,
+                       COALESCE(wt.name, w.worker_type_id) AS worker_type_name
+                FROM workers w
+                LEFT JOIN worker_types wt ON w.worker_type_id = wt.id
+                ORDER BY w.id
                 """
             )
             workers = []
@@ -34,12 +37,13 @@ def get_workers():
                         "id": row[0],
                         "name": row[1],
                         "worker_type_id": row[2],
-                        "worker_type": row[2],  # worker_type_id is the type name
                         "is_certified": row[3],
                         "organization": row[4] or "",
                         "emp_id": row[5],
                         "compose": row[6] or "",
                         "created_time": row[7],
+                        "status": row[8],
+                        "worker_type": row[9],
                     }
                 )
         return Result.success(

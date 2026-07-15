@@ -3,7 +3,7 @@
     <el-card class="panel-card" shadow="hover">
       <div class="panel-header" @click="togglePanel('device')">
         <div class="panel-title">
-          <img src="/src/assets/设备管理.png" alt="设备管理" class="panel-icon mr6" />
+          <img src="/src/assets/iconfont/设备管理.png" alt="设备管理" class="panel-icon mr6" />
           设备管理
         </div>
         <div class="panel-tools" @click.stop>

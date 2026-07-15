@@ -1,0 +1,1 @@
+from .search_router import search_archive_bp

@@ -61,6 +61,7 @@ def add_material():
                 (name, price, stock_quantity, unit, datetime.datetime.now(), datetime.datetime.now()),
             )
             material_id = c.lastrowid
+            conn.commit()
 
         return Result.success(data={"material_id": material_id}, message=f"材料 {name} 添加成功")
     except Exception as e:
@@ -100,6 +101,7 @@ def batch_import_materials():
                 except Exception as e:
                     error_messages.append(f"材料 {material.get('name', '未知')} 导入失败: {str(e)}")
 
+            conn.commit()
         return Result.success(
             data={"success_count": success_count, "error_count": len(error_messages), "errors": error_messages},
             message=f"成功导入 {success_count} 个材料",
@@ -118,6 +120,7 @@ def delete_material(material_id):
             if not row:
                 return Result.fail(message="材料不存在")
             c.execute("DELETE FROM materials WHERE id = ?", (material_id,))
+            conn.commit()
         return Result.success(message=f"材料 {row[0]} 删除成功")
     except Exception as e:
         return Result.fail(message=f"删除材料失败: {str(e)}")
@@ -150,6 +153,23 @@ def update_material(material_id):
             updates["updated_at"] = datetime.datetime.now()
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             c.execute(f"UPDATE materials SET {set_clause} WHERE id = ?", list(updates.values()) + [material_id])
+            conn.commit()
         return Result.success(message="材料更新成功")
     except Exception as e:
         return Result.fail(message=f"更新材料失败: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# GET  /api/materials/export  –  导出材料数据（返回数据库原始列名和值）
+# ---------------------------------------------------------------------------
+@materials_bp.route("/materials/export", methods=["GET"])
+def export_materials():
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM materials ORDER BY id")
+            columns = [desc[0] for desc in c.description]
+            rows = [list(row) for row in c.fetchall()]
+        return Result.success(data={"columns": columns, "rows": rows}, message="查询成功")
+    except Exception as e:
+        return Result.fail(message=f"导出材料数据失败: {str(e)}")

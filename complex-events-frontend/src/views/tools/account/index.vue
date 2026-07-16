@@ -571,12 +571,12 @@ async function saveTool() {
     const toolData = {
       name: currentTool.name,
       tool_type: currentTool.tool_type,
-      capacity: parseFloat(currentTool.capacity),
-      daily_rental_cost: parseFloat(currentTool.daily_rental_cost),
+      capacity: currentTool.capacity != null ? parseFloat(currentTool.capacity) : 0,
+      daily_rental_cost: currentTool.daily_rental_cost != null ? parseFloat(currentTool.daily_rental_cost) : 0,
       is_available: Boolean(currentTool.is_available),
       requires_operator: Boolean(currentTool.requires_operator)
     }
-    
+
       await request({
         url: `/api/maintenance-tools/${currentTool.id}`,
         method: 'put',
@@ -644,33 +644,23 @@ function resetSearch() {
 }
 
 // 导出机具数据为 Excel 文件
-function downloadToolData() {
+async function downloadToolData() {
   try {
     downloading.value = true
 
-    const exportFields = [
-      { key: 'id', label: '机具编号' },
-      { key: 'name', label: '机具名称' },
-      { key: 'tool_type', label: '机具类型' },
-      { key: 'is_available', label: '是否可用' },
-      { key: 'requires_operator', label: '是否需要操作员' },
-      { key: 'capacity', label: '重量' },
-      { key: 'daily_rental_cost', label: '日租金' },
-      { key: 'created_at', label: '创建时间' },
-    ]
+    // 直接从数据库查询所有列，确保表头和内容与数据库一致
+    const response = await request({
+      url: '/api/maintenance-tools/export',
+      method: 'get'
+    })
+    const { columns, rows } = response.data
 
-    const headerRow = exportFields.map(f => f.label)
-    const dataRows = tools.value.map(tool =>
-      exportFields.map(f => tool[f.key] ?? '')
-    )
-    const worksheetData = [headerRow, ...dataRows]
-
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const worksheet = XLSX.utils.aoa_to_sheet([columns, ...rows])
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, '机具数据')
 
     XLSX.writeFile(workbook, '维修机具数据.xlsx')
-    ElMessage.success(`成功导出 ${dataRows.length} 条机具数据`)
+    ElMessage.success(`成功导出 ${rows.length} 条机具数据`)
   } catch (error) {
     console.error('导出数据失败:', error)
     ElMessage.error('导出数据失败: ' + (error.message || '未知错误'))
@@ -762,19 +752,39 @@ async function confirmImport(data) {
     }
     
     // 发送POST请求到批量导入接口
-    await request({
+    const response = await request({
       url: '/api/batch-import-maintenance-tools',
       method: 'post',
-      data: requestData
+      data: requestData,
+      onUploadProgress: (progressEvent) => {
+        const percent = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1))
+        progressPercent.value = percent
+      }
     })
-    
+
+    // 根据实际导入结果显示提示
+    const { success_count, error_count, errors } = response.data
     uploading.value = false
-    tipType.value = 'success'
-    tipMessage.value = '批量导入成功'
-    tipVisible.value = true
     progressPercent.value = 100
-    progressStatus.value = 'success'
-    ElMessage.success('批量导入成功')
+    progressStatus.value = error_count > 0 ? 'warning' : 'success'
+    tipVisible.value = true
+
+    if (error_count > 0) {
+      tipType.value = 'warning'
+      tipMessage.value = `成功导入 ${success_count} 条，失败 ${error_count} 条`
+      ElMessage.warning(`批量导入完成：成功 ${success_count} 条，失败 ${error_count} 条`)
+      if (errors && errors.length > 0) {
+        console.error('导入错误详情:', errors.slice(0, 10))
+      }
+    } else if (success_count > 0) {
+      tipType.value = 'success'
+      tipMessage.value = `成功导入 ${success_count} 条机具数据`
+      ElMessage.success(`成功导入 ${success_count} 条机具数据`)
+    } else {
+      tipType.value = 'warning'
+      tipMessage.value = '没有数据被导入'
+      ElMessage.warning('没有数据被导入，请检查Excel文件格式')
+    }
     
     setTimeout(() => {
       tipVisible.value = false

@@ -179,7 +179,7 @@
     <el-dialog v-model="editDialogVisible" title="编辑工人" width="500">
       <el-form :model="currentWorker" label-width="100px">
         <el-form-item 
-          v-for="column in workerColumns.filter(col => col.prop !== 'id' && col.prop !== 'created_time' && col.prop !== 'worker_type_id')" 
+          v-for="column in workerColumns.filter(col => col.prop !== 'id' && col.prop !== 'created_time')"
           :key="column.prop"
           :label="column.label"
         >
@@ -241,9 +241,24 @@
           </el-select>
         </el-form-item>
         <el-form-item label="组织" prop="organization">
-          <el-input 
-            v-model="newWorker.organization" 
+          <el-input
+            v-model="newWorker.organization"
             placeholder="请输入组织"
+          />
+        </el-form-item>
+        <el-form-item label="电话" prop="phone">
+          <el-input
+            v-model="newWorker.phone"
+            placeholder="请输入电话"
+          />
+        </el-form-item>
+        <el-form-item label="技能等级" prop="skill_level">
+          <el-input-number
+            v-model="newWorker.skill_level"
+            :min="1"
+            :max="10"
+            placeholder="请输入技能等级"
+            style="width: 100%"
           />
         </el-form-item>
       </el-form>
@@ -345,8 +360,8 @@ const filteredWorkers = computed(() => {
       worker.name && worker.name.includes(searchForm.name) : true
     
     // 检查工种是否匹配
-    const workerTypeMatch = searchForm.worker_type ? 
-      worker.worker_type && worker.worker_type.includes(searchForm.worker_type) : true
+    const workerTypeMatch = searchForm.worker_type ?
+      worker.worker_type_id && worker.worker_type_id.includes(searchForm.worker_type) : true
     
     // 检查是否持证字段是否匹配
     let certifiedMatch = true;
@@ -437,19 +452,19 @@ async function fetchWorkers() {
       const labelMap = {
         id: '工号',
         name: '姓名',
-        worker_type: '工种',
-        created_time: '创建时间',
-        worker_type_id: '工种ID',
+        worker_type_id: '工种',
         is_certified: '是否持证',
         organization: '组织',
-        compose: '班组'  // 新增班组列
+        emp_id: '员工ID',
+        compose: '班组',
+        status: '状态',
+        skill_level: '技能等级',
+        phone: '电话',
       }
       
-      // 生成列，排除 created_time
+      // 生成列，排除 created_time、班组、员工ID、状态
       let columns = Object.keys(firstRow)
-        .filter(key => key !== 'created_time')
-        .filter(key => key !== 'emp_id') 
-        .filter(key => key !== 'compose')  // 隐藏创建时间
+        .filter(key => key !== 'created_time' && key !== 'compose' && key !== 'emp_id' && key !== 'status')
         .map(key => ({
           prop: key,
           label: labelMap[key] || key,
@@ -459,15 +474,17 @@ async function fetchWorkers() {
       workerColumns.value = columns
       
       // 提取工种列表
-      workerTypes.value = [...new Set(processedWorkers.map(worker => worker.worker_type))];
+      workerTypes.value = [...new Set(processedWorkers.map(worker => worker.worker_type_id))];
     } else {
       // 如果没有数据，设置默认列，包括班组字段
       workerColumns.value = [
         { prop: 'id', label: '工号', width: 100 },
         { prop: 'name', label: '姓名', width: 120 },
-        { prop: 'worker_type', label: '工种', width: 150 },
+        { prop: 'worker_type_id', label: '工种', width: 150 },
         { prop: 'is_certified', label: '是否持证', width: 100 },
         { prop: 'organization', label: '组织', width: 150 },
+        { prop: 'skill_level', label: '技能等级', width: 100 },
+        { prop: 'phone', label: '电话', width: 130 },
       ]
     }
   } catch (error) {
@@ -490,10 +507,15 @@ function editWorker(row) {
 // 保存工人修改
 async function saveWorker() {
   try {
+    const updateData = { ...currentWorker }
+    // 后端 update_worker 的 allowed_fields 使用 worker_type，做字段名映射
+    if (updateData.worker_type_id !== undefined) {
+      updateData.worker_type = updateData.worker_type_id
+    }
     await request({
       url: `/api/workers/${currentWorker.id}`,
       method: 'put',
-      data: currentWorker
+      data: updateData
     })
     ElMessage.success('工人信息已更新')
     editDialogVisible.value = false
@@ -558,34 +580,23 @@ function resetSearch() {
 }
 
 // 导出工人数据为 Excel 文件
-function downloadWorkerData() {
+async function downloadWorkerData() {
   try {
     downloading.value = true
 
-    // 字段映射（与表格列保持一致）
-    const exportFields = [
-      { key: 'id', label: '工号' },
-      { key: 'name', label: '姓名' },
-      { key: 'worker_type', label: '工种' },
-      { key: 'is_certified', label: '是否持证' },
-      { key: 'organization', label: '组织' },
-      { key: 'compose', label: '班组' },
-      { key: 'status', label: '状态' },
-    ]
+    // 直接从数据库查询所有列，确保表头和内容与数据库一致
+    const response = await request({
+      url: '/api/workers/export',
+      method: 'get'
+    })
+    const { columns, rows } = response.data
 
-    // 构建工作表数据：第一行为表头，后续行为数据行
-    const headerRow = exportFields.map(f => f.label)
-    const dataRows = workers.value.map(worker =>
-      exportFields.map(f => worker[f.key] ?? '')
-    )
-    const worksheetData = [headerRow, ...dataRows]
-
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const worksheet = XLSX.utils.aoa_to_sheet([columns, ...rows])
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, '工人数据')
 
     XLSX.writeFile(workbook, '工人数据.xlsx')
-    ElMessage.success(`成功导出 ${dataRows.length} 条工人数据`)
+    ElMessage.success(`成功导出 ${rows.length} 条工人数据`)
   } catch (error) {
     console.error('导出数据失败:', error)
     ElMessage.error('导出数据失败: ' + (error.message || '未知错误'))
@@ -625,12 +636,16 @@ function previewData() {
         // 定义字段映射，将英文字段名映射为中文标题
         const labelMap = {
           id: '工号',
+          name: '姓名',
           worker_name: '姓名',
+          worker_type_id: '工种',
           worker_type: '工种',
-          created_time: '创建时间',
-          worker_type_id: '工种ID',
           is_certified: '是否持证',
-          organization: '组织'
+          organization: '组织',
+          compose: '班组',
+          status: '状态',
+          skill_level: '技能等级',
+          phone: '电话',
         }
         excelColumns.value = Object.keys(firstRow).map(key => ({
           prop: key,
@@ -642,7 +657,7 @@ function previewData() {
         excelColumns.value = [
           { prop: 'id', label: '工号', width: 100 },
           { prop: 'name', label: '姓名', width: 120 },
-          { prop: 'worker_type', label: '工种', width: 150 },
+          { prop: 'worker_type_id', label: '工种', width: 150 },
           { prop: 'is_certified', label: '是否持证', width: 100 },
           { prop: 'organization', label: '组织', width: 150 }
         ]
@@ -675,7 +690,7 @@ async function confirmImport(data) {
     }
     
     // 发送POST请求到批量导入接口
-    await request({
+    const response = await request({
       url: '/api/batch-import-workers',
       method: 'post',
       data: requestData,
@@ -685,15 +700,30 @@ async function confirmImport(data) {
         progressPercent.value = percent
       }
     })
-    
-    // 导入成功处理
+
+    // 根据实际导入结果显示提示
+    const { success_count, error_count, errors } = response.data
     uploading.value = false
-    tipType.value = 'success'
-    tipMessage.value = '批量导入成功'
-    tipVisible.value = true
     progressPercent.value = 100
-    progressStatus.value = 'success'
-    ElMessage.success('批量导入成功')
+    progressStatus.value = error_count > 0 ? 'warning' : 'success'
+    tipVisible.value = true
+
+    if (error_count > 0) {
+      tipType.value = 'warning'
+      tipMessage.value = `成功导入 ${success_count} 条，失败 ${error_count} 条`
+      ElMessage.warning(`批量导入完成：成功 ${success_count} 条，失败 ${error_count} 条`)
+      if (errors && errors.length > 0) {
+        console.error('导入错误详情:', errors.slice(0, 10))
+      }
+    } else if (success_count > 0) {
+      tipType.value = 'success'
+      tipMessage.value = `成功导入 ${success_count} 条工人数据`
+      ElMessage.success(`成功导入 ${success_count} 条工人数据`)
+    } else {
+      tipType.value = 'warning'
+      tipMessage.value = '没有数据被导入'
+      ElMessage.warning('没有数据被导入，请检查Excel文件格式')
+    }
     
     // 3秒后自动隐藏成功提示
     setTimeout(() => {
@@ -785,6 +815,8 @@ function showAddWorkerDialog() {
   newWorker.name = ''
   newWorker.is_certified = '是'
   newWorker.organization = ''
+  newWorker.phone = ''
+  newWorker.skill_level = 1
   addDialogVisible.value = true
 }
 
@@ -803,7 +835,9 @@ async function addWorker() {
         worker_type: newWorker.worker_type,
         worker_name: newWorker.name,
         is_certified: newWorker.is_certified === '是' ? 1 : 0,
-        organization: newWorker.organization
+        organization: newWorker.organization,
+        phone: newWorker.phone,
+        skill_level: newWorker.skill_level
       }
     })
     

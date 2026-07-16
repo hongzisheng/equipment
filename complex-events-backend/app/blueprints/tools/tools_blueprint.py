@@ -7,6 +7,21 @@ from app.utils import get_db_connection
 tools_bp = Blueprint("tools", __name__)
 
 
+def _parse_number(value):
+    """将各种格式的数值字符串转为 float，兼容 '25t'、'-' 等格式。"""
+    if value is None or value == "" or value == "-":
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    # 去掉尾部非数字字符（如 '25t' → '25'）
+    cleaned = str(value).strip()
+    while cleaned and not cleaned[-1].isdigit():
+        cleaned = cleaned[:-1]
+    if not cleaned:
+        return 0.0
+    return float(cleaned)
+
+
 @tools_bp.route("/maintenance-tools", methods=["GET"])
 def get_maintenance_tools():
     try:
@@ -71,10 +86,10 @@ def add_maintenance_tool():
         is_available = data.get("is_available", True)
         requires_operator = data.get("requires_operator", False)
 
-        if not all([name, tool_type, capacity is not None, daily_rental_cost is not None]):
-            return Result.fail(message="器具名称、类型、容量和日租金不能为空")
-        capacity = float(capacity)
-        daily_rental_cost = float(daily_rental_cost)
+        if not all([name, tool_type]):
+            return Result.fail(message="器具名称和类型不能为空")
+        capacity = _parse_number(capacity)
+        daily_rental_cost = _parse_number(daily_rental_cost)
 
         now = datetime.datetime.now()
         with get_db_connection() as conn:
@@ -86,6 +101,7 @@ def add_maintenance_tool():
                 (name, tool_type, capacity, daily_rental_cost, bool(is_available), bool(requires_operator), now, now),
             )
             tool_id = c.lastrowid
+            conn.commit()
         return Result.success(data={"tool_id": tool_id}, message=f"维修器具 {name} 添加成功")
     except (ValueError, TypeError):
         return Result.fail(message="容量和日租金必须是数字")
@@ -104,8 +120,8 @@ def update_maintenance_tool(tool_id):
             if not row:
                 return Result.fail(message="维修器具不存在")
 
-            allowed = {"name": str, "tool_type": str, "capacity": float,
-                       "daily_rental_cost": float, "is_available": bool, "requires_operator": bool}
+            allowed = {"name": str, "tool_type": str, "capacity": _parse_number,
+                       "daily_rental_cost": _parse_number, "is_available": bool, "requires_operator": bool}
             updates = {}
             for field, cast in allowed.items():
                 if field in data and data[field] is not None:
@@ -119,6 +135,7 @@ def update_maintenance_tool(tool_id):
             updates["updated_at"] = datetime.datetime.now()
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             c.execute(f"UPDATE maintenance_tools SET {set_clause} WHERE id = ?", list(updates.values()) + [tool_id])
+            conn.commit()
         return Result.success(message=f"维修器具 {row[0]} 更新成功")
     except Exception as e:
         return Result.fail(message=f"更新维修器具失败: {str(e)}")
@@ -134,6 +151,7 @@ def delete_maintenance_tool(tool_id):
             if not row:
                 return Result.fail(message="维修器具不存在")
             c.execute("DELETE FROM maintenance_tools WHERE id = ?", (tool_id,))
+            conn.commit()
         return Result.success(message=f"维修器具 {row[0]} 删除成功")
     except Exception as e:
         return Result.fail(message=f"删除维修器具失败: {str(e)}")
@@ -158,11 +176,11 @@ def batch_import_maintenance_tools():
                     daily_rental_cost = tool.get("daily_rental_cost")
                     is_available = tool.get("is_available", True)
                     requires_operator = tool.get("requires_operator", False)
-                    if not all([name, tool_type, capacity is not None, daily_rental_cost is not None]):
+                    if not all([name, tool_type]):
                         error_messages.append(f"维修器具 {name} 的必填字段不完整")
                         continue
-                    capacity = float(capacity)
-                    daily_rental_cost = float(daily_rental_cost)
+                    capacity = _parse_number(capacity)
+                    daily_rental_cost = _parse_number(daily_rental_cost)
                     now = datetime.datetime.now()
                     c.execute(
                         """INSERT INTO maintenance_tools
@@ -176,9 +194,26 @@ def batch_import_maintenance_tools():
                 except Exception as e:
                     error_messages.append(f"维修器具 {tool.get('name', '未知')} 导入失败: {str(e)}")
 
+            conn.commit()
         return Result.success(
             data={"success_count": success_count, "error_count": len(error_messages), "errors": error_messages},
             message=f"成功导入 {success_count} 个维修器具",
         )
     except Exception as e:
         return Result.fail(message=f"批量导入维修器具失败: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# GET  /api/maintenance-tools/export  –  导出机具数据（返回数据库原始列名和值）
+# ---------------------------------------------------------------------------
+@tools_bp.route("/maintenance-tools/export", methods=["GET"])
+def export_maintenance_tools():
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM maintenance_tools ORDER BY id")
+            columns = [desc[0] for desc in c.description]
+            rows = [list(row) for row in c.fetchall()]
+        return Result.success(data={"columns": columns, "rows": rows}, message="查询成功")
+    except Exception as e:
+        return Result.fail(message=f"导出机具数据失败: {str(e)}")

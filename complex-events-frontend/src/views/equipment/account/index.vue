@@ -1033,6 +1033,15 @@ function editEquipment(row) {
 // 保存设备修改
 async function saveEquipment() {
   try {
+    await request({
+      url: `/api/equipment-instances/${currentNode.value.id}`,
+      method: 'put',
+      data: {
+        name: currentNode.value.name,
+        category: currentNode.value.category,
+        equipment_type_id: currentNode.value.equipment_type_id
+      }
+    })
     ElMessage.success('设备信息已更新')
     isEditing.value = false
     await fetchEquipmentInstances()
@@ -1068,48 +1077,23 @@ function handleCurrentChange(newPage) {
   currentPage.value = newPage
 }
 // 导出设备数据为 Excel 文件
-function downloadEquipmentData() {
+async function downloadEquipmentData() {
   try {
     downloading.value = true
 
-    // 从树结构中提取所有设备实例
-    const instances = []
-    const root = treeData.value[0]
-    if (root && root.children) {
-      root.children.forEach(category => {
-        if (category.children) {
-          category.children.forEach(kind => {
-            if (kind.children) {
-              kind.children.forEach(instance => {
-                instances.push(instance)
-              })
-            }
-          })
-        }
-      })
-    }
+    // 直接从数据库查询所有列，确保表头和内容与数据库一致
+    const response = await request({
+      url: '/api/equipment-instances/export',
+      method: 'get'
+    })
+    const { columns, rows } = response.data
 
-    const exportFields = [
-      { key: 'id', label: '设备ID' },
-      { key: 'name', label: '设备名称' },
-      { key: 'category', label: '设备分类' },
-      { key: 'equipment_type_id', label: '设备类型ID' },
-      { key: 'equipment_type_name', label: '设备类型名称' },
-      { key: 'created_time', label: '创建时间' },
-    ]
-
-    const headerRow = exportFields.map(f => f.label)
-    const dataRows = instances.map(item =>
-      exportFields.map(f => item[f.key] ?? '')
-    )
-    const worksheetData = [headerRow, ...dataRows]
-
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const worksheet = XLSX.utils.aoa_to_sheet([columns, ...rows])
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, '设备数据')
 
     XLSX.writeFile(workbook, '设备数据.xlsx')
-    ElMessage.success(`成功导出 ${dataRows.length} 条设备数据`)
+    ElMessage.success(`成功导出 ${rows.length} 条设备数据`)
   } catch (error) {
     console.error('导出数据失败:', error)
     ElMessage.error('导出数据失败: ' + (error.message || '未知错误'))
@@ -1186,7 +1170,7 @@ async function confirmImport(data) {
     }
     
     // 发送POST请求到批量导入接口
-    await request({
+    const response = await request({
       url: '/api/batch-import-equipment',
       method: 'post',
       data: requestData,
@@ -1196,15 +1180,30 @@ async function confirmImport(data) {
         progressPercent.value = percent
       }
     })
-    
-    // 导入成功处理
+
+    // 根据实际导入结果显示提示
+    const { success_count, error_count, errors } = response.data
     uploading.value = false
-    tipType.value = 'success'
-    tipMessage.value = '批量导入成功'
-    tipVisible.value = true
     progressPercent.value = 100
-    progressStatus.value = 'success'
-    ElMessage.success('批量导入成功')
+    progressStatus.value = error_count > 0 ? 'warning' : 'success'
+    tipVisible.value = true
+
+    if (error_count > 0) {
+      tipType.value = 'warning'
+      tipMessage.value = `成功导入 ${success_count} 条，失败 ${error_count} 条`
+      ElMessage.warning(`批量导入完成：成功 ${success_count} 条，失败 ${error_count} 条`)
+      if (errors && errors.length > 0) {
+        console.error('导入错误详情:', errors.slice(0, 10))
+      }
+    } else if (success_count > 0) {
+      tipType.value = 'success'
+      tipMessage.value = `成功导入 ${success_count} 条设备数据`
+      ElMessage.success(`成功导入 ${success_count} 条设备数据`)
+    } else {
+      tipType.value = 'warning'
+      tipMessage.value = '没有数据被导入'
+      ElMessage.warning('没有数据被导入，请检查Excel文件格式')
+    }
     
     // 3秒后自动隐藏成功提示
     setTimeout(() => {

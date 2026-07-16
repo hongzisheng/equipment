@@ -144,6 +144,43 @@ def delete_equipment_instance(equipment_id):
 
 
 # ---------------------------------------------------------------------------
+# PUT  /api/equipment-instances/<id>  –  update an equipment instance
+# ---------------------------------------------------------------------------
+@equipment_bp.route("/equipment-instances/<int:equipment_id>", methods=["PUT"])
+def update_equipment_instance(equipment_id):
+    try:
+        data = request.get_json()
+        name = data.get("name")
+        category = data.get("category")
+        equipment_type_id = data.get("equipment_type_id")
+
+        if not name:
+            return Result.fail(message="设备名称不能为空")
+
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT id FROM equipment_instances WHERE id = ?", (equipment_id,)
+            )
+            if not c.fetchone():
+                return Result.fail(message="设备不存在")
+
+            c.execute(
+                """UPDATE equipment_instances
+                   SET name = ?,
+                       category = ?,
+                       equipment_type_id = ?
+                   WHERE id = ?""",
+                (name, category, equipment_type_id, equipment_id),
+            )
+            conn.commit()
+
+        return Result.success(message=f"设备 {name} 更新成功")
+    except Exception as e:
+        return Result.fail(message=f"更新设备失败: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
 # POST  /api/batch-import-equipment  –  batch import from Excel
 # ---------------------------------------------------------------------------
 @equipment_bp.route("/batch-import-equipment", methods=["POST"])
@@ -165,7 +202,7 @@ def batch_import_equipment():
                 try:
                     equipment_type_id = equipment.get("equipment_type_id")
                     equipment_name = equipment.get("equipment_name") or equipment.get("name")
-                    equipment_category = equipment.get("equipment_category", "")
+                    equipment_category = equipment.get("equipment_category") or equipment.get("category", "")
 
                     if not equipment_type_id or not equipment_name:
                         error_messages.append(
@@ -218,8 +255,7 @@ def get_work_order_tasks():
                        wt.equipment_id, wt.equipment_name,
                        wt.description, wt.estimated_hours,
                        wt.scheduled_start_time, wt.scheduled_end_time,
-                       wt.status, wt.material_requirements,
-                       wt.tools_requirements, wt.workers
+                       wt.status, wt.workers
                 FROM work_order_tasks wt
                 LEFT JOIN work_orders wo ON wt.work_order_id = wo.id
                 ORDER BY wt.work_order_id, wt.id
@@ -228,24 +264,10 @@ def get_work_order_tasks():
 
             tasks = []
             for row in c.fetchall():
-                material_reqs = {}
+                workers = {}
                 if row[12]:
                     try:
-                        material_reqs = json.loads(row[12])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-                tools_reqs = {}
-                if row[13]:
-                    try:
-                        tools_reqs = json.loads(row[13])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-                workers = {}
-                if row[14]:
-                    try:
-                        workers = json.loads(row[14])
+                        workers = json.loads(row[12])
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -263,8 +285,8 @@ def get_work_order_tasks():
                         "scheduled_start_time": row[9],
                         "scheduled_end_time": row[10],
                         "status": row[11] or "",
-                        "material_requirements": material_reqs,
-                        "tools_requirements": tools_reqs,
+                        "material_requirements": {},
+                        "tools_requirements": {},
                         "workers": workers,
                     }
                 )
@@ -272,3 +294,19 @@ def get_work_order_tasks():
         return Result.success(data=tasks, message="查询成功")
     except Exception as e:
         return Result.fail(message=f"获取工单任务失败: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# GET  /api/equipment-instances/export  –  导出设备数据（返回数据库原始列名和值）
+# ---------------------------------------------------------------------------
+@equipment_bp.route("/equipment-instances/export", methods=["GET"])
+def export_equipment_instances():
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM equipment_instances ORDER BY id")
+            columns = [desc[0] for desc in c.description]
+            rows = [list(row) for row in c.fetchall()]
+        return Result.success(data={"columns": columns, "rows": rows}, message="查询成功")
+    except Exception as e:
+        return Result.fail(message=f"导出设备数据失败: {str(e)}")

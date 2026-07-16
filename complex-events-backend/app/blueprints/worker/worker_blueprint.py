@@ -21,9 +21,9 @@ def get_workers():
             c = conn.cursor()
             c.execute(
                 """
-                SELECT w.id, w.name, w.worker_type_id, w.is_certified,
+                SELECT w.id, w.worker_type_id, w.name, w.status,w.is_certified,
                        w.organization, w.emp_id, w.compose,
-                       w.status, w.skill_level, w.phone,
+                        w.skill_level, w.phone,
                        COALESCE(wt.name, w.worker_type_id) AS worker_type_name
                 FROM workers w
                 LEFT JOIN worker_types wt ON w.worker_type_id = wt.id
@@ -35,16 +35,15 @@ def get_workers():
                 workers.append(
                     {
                         "id": row[0],
-                        "name": row[1],
-                        "worker_type_id": row[2],
-                        "is_certified": row[3],
-                        "organization": row[4] or "",
-                        "emp_id": row[5],
-                        "compose": row[6] or "",
-                        "status": row[7],
-                        "worker_type": row[8],
-                        "skill_level": row[9],
-                        "phone": row[10]
+                        "worker_type_id": row[1],
+                        "name": row[2],
+                        "status": row[3],
+                        "is_certified": row[4],
+                        "organization": row[5] or "",
+                        "emp_id": row[6],
+                        "compose": row[7] or "",
+                        "skill_level": row[8],
+                        "phone": row[9]
                     }
                 )
         return Result.success(
@@ -67,6 +66,8 @@ def add_worker():
         is_certified = data.get("is_certified", 0)
         organization = data.get("organization", "")
         compose = data.get("compose", "")
+        phone = data.get("phone", "")
+        skill_level = data.get("skill_level", 1)
 
         if not worker_type or not worker_name:
             return Result.fail(message="工人工种和工人名称不能为空")
@@ -77,10 +78,10 @@ def add_worker():
             c.execute(
                 """
                 INSERT INTO workers
-                    (worker_type_id, name, is_certified, organization, compose)
-                VALUES (?, ?, ?, ?, ?)
+                    (worker_type_id, name, is_certified, organization, compose, phone, skill_level)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (worker_type, worker_name, int(is_certified), organization, compose),
+                (worker_type, worker_name, int(is_certified), organization, compose, phone, int(skill_level)),
             )
             conn.commit()
 
@@ -181,7 +182,7 @@ def batch_import_workers():
 
             for worker in workers_list:
                 try:
-                    worker_type = worker.get("worker_type")
+                    worker_type = worker.get("worker_type_id") or worker.get("worker_type")
                     worker_name = worker.get("worker_name") or worker.get("name")
                     certified_raw = worker.get("is_certified", False)
                     # 兼容多种格式：1/0、"是"/"否"、True/False
@@ -193,6 +194,8 @@ def batch_import_workers():
                         certified = int(certified_raw) if certified_raw else 0
                     organization = worker.get("organization", "")
                     compose = worker.get("compose", "")
+                    phone = worker.get("phone", "")
+                    skill_level = worker.get("skill_level", 1)
 
                     if not worker_type or not worker_name:
                         error_messages.append(
@@ -204,8 +207,8 @@ def batch_import_workers():
                     c.execute(
                         """
                         INSERT INTO workers
-                            (worker_type_id, name, is_certified, organization, compose)
-                        VALUES (?, ?, ?, ?, ?)
+                            (worker_type_id, name, is_certified, organization, compose, phone, skill_level)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             worker_type,
@@ -213,6 +216,8 @@ def batch_import_workers():
                             certified,
                             organization,
                             compose,
+                            phone,
+                            int(skill_level) if skill_level else 1,
                         ),
                     )
                     success_count += 1
@@ -233,3 +238,19 @@ def batch_import_workers():
         )
     except Exception as e:
         return Result.fail(message=f"批量导入工人失败: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# GET  /api/workers/export  –  导出工人数据（返回数据库原始列名和值）
+# ---------------------------------------------------------------------------
+@worker_bp.route("/workers/export", methods=["GET"])
+def export_workers():
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM workers ORDER BY id")
+            columns = [desc[0] for desc in c.description]
+            rows = [list(row) for row in c.fetchall()]
+        return Result.success(data={"columns": columns, "rows": rows}, message="查询成功")
+    except Exception as e:
+        return Result.fail(message=f"导出工人数据失败: {str(e)}")

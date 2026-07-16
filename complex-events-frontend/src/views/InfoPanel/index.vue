@@ -68,7 +68,6 @@ const selectedWorker = ref({})
 
 const refreshData = async () => {
   loading.value = true
-
   try {
     const workersResponse = await getWorkerStatus({
       start_time: `第${searchForm.startDay}天 ${searchForm.startTime}`,

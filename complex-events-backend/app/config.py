@@ -4,16 +4,18 @@ import os
 class Config:
     """Application configuration for the retained pages."""
 
-    UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join("assets", "file"))
-    SUB_GRAPH_PATH = os.environ.get("SUB_GRAPH_PATH", os.path.join("assets", "sub_graph"))
-    LOG_DIR = os.environ.get("LOG_DIR", os.path.join("assets", "logs"))
+    _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+    UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(_PROJECT_ROOT, "assets", "file"))
+    SUB_GRAPH_PATH = os.environ.get("SUB_GRAPH_PATH", os.path.join(_PROJECT_ROOT, "assets", "sub_graph"))
+    LOG_DIR = os.environ.get("LOG_DIR", os.path.join(_PROJECT_ROOT, "assets", "logs"))
 
     LOGIN_USERNAME = os.environ.get("LOGIN_USERNAME", "admin")
     LOGIN_PASSWORD = os.environ.get("LOGIN_PASSWORD", "admin123")
     LOGIN_DISPLAY_NAME = os.environ.get("LOGIN_DISPLAY_NAME", "管理员")
 
     # SQLite: local document store to replace MongoDB.
-    SQLITE_DB_PATH = os.environ.get("SQLITE_DB_PATH", os.path.join("database", "db.sqlite3"))
+    SQLITE_DB_PATH = os.environ.get("SQLITE_DB_PATH", os.path.join(_PROJECT_ROOT, "database", "db.sqlite3"))
     
     # Original project database path for process confirmation and info panel
     ORIGINAL_DB_PATH = os.environ.get("ORIGINAL_DB_PATH", r"F:\化工\Project\equipment\database\db.sqlite3")
@@ -35,3 +37,6 @@ class Config:
 class DevelopmentConfig(Config):
     DEBUG = True
     PORT = 8800
+
+if __name__ == "__main__":
+    print(Config.SQLITE_DB_PATH)

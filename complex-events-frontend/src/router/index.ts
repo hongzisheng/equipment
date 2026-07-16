@@ -34,11 +34,23 @@ export const constantRoutes: RouteItem[] = [
     hidden: true,
   },
   {
+    path: '/home',
+    component: () => import('@/layout/index.vue'),
+    hidden: true,
+    children: [
+      {
+        path: '',
+        component: EmptyPage,
+        meta: { title: '首页' },
+      },
+    ],
+  },
+  {
     path: '/',
-    redirect: '/worker/account',
+    redirect: '/home',
     component: () => import('@/layout/index.vue'),
     meta: { title: '首页', icon: 'home', affix: true },
-  },
+},
   {
     path: '/worker',
     component: () => import('@/layout/index.vue'),
@@ -222,7 +234,12 @@ router.beforeEach(async (to, from, next) => {
   document.title = getPageTitle(to.meta.title)
   const hasToken = getToken()
   const userStore = useUserStore()
-
+  //开发者模式下跳过登录
+  // if (import.meta.env.DEV) {
+  //   next()
+  //   NProgress.done()
+  //   return
+  // }
   if (hasToken) {
     if (to.path === '/login') {
       next({ path: '/' })

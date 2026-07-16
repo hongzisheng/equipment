@@ -237,7 +237,7 @@ import {
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
-const API_BASE = import.meta.env.MODE === 'production' ? 'http://localhost:5000/api' : '/api'
+const API_BASE = import.meta.env.MODE === 'production' ? 'http://localhost:8800/api' : '/api'
 
 // ========== 分类、文件列表（搜索和分页） ==========
 const selectedCategory = ref('')
@@ -414,6 +414,38 @@ async function uploadAll() {
         fileItem.percent = 100
         fileItem.statusText = '已上传'
         successCount++
+      } else if (data.conflict) {
+        // 重名冲突：询问用户是否覆盖
+        try {
+          await ElMessageBox.confirm(
+            `文件 "${fileItem.name}" 已存在，是否覆盖？`,
+            '文件冲突',
+            { confirmButtonText: '覆盖', cancelButtonText: '跳过', type: 'warning' }
+          )
+          // 用户确认覆盖，重新上传带 overwrite 标记
+          fileItem.statusText = '覆盖中...'
+          const retryForm = new FormData()
+          retryForm.append('file', fileItem.file)
+          retryForm.append('category', fileItem.category)
+          retryForm.append('original_name', fileItem.name)
+          retryForm.append('overwrite', 'true')
+          const retryResp = await fetch(`${API_BASE}/upload`, {
+            method: 'POST',
+            body: retryForm
+          })
+          const retryData = await retryResp.json()
+          if (retryData.success) {
+            fileItem.percent = 100
+            fileItem.statusText = '已上传'
+            successCount++
+          } else {
+            fileItem.statusText = '上传失败'
+            ElMessage.error(`${fileItem.name}：${retryData.message || '覆盖上传失败'}`)
+          }
+        } catch {
+          // 用户点了取消/跳过
+          fileItem.statusText = '已跳过'
+        }
       } else {
         fileItem.statusText = '上传失败'
         ElMessage.error(`${fileItem.name}：${data.message || '上传失败'}`)

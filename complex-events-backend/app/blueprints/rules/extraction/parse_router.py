@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 import requests
 import requests.exceptions
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
@@ -134,17 +134,34 @@ def parse_document():
     if request.method == 'OPTIONS':
         return '', 204
 
-    file = request.files.get('file')
-    if not file:
-        return jsonify({'ok': False, 'error': 'no file provided'}), 400
+    file_id = request.form.get('file_id')
+    if file_id:
+        # 从文件管理读取已上传文件
+        db_path = get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT saved_path, original_name FROM uploaded_files WHERE id = ?', (file_id,))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'ok': False, 'error': 'file not found'}), 404
+        file_path = row['saved_path']
+        filename = row['original_name'] or Path(file_path).name
+        with open(file_path, 'rb') as f:
+            file_bytes = f.read()
+    else:
+        file = request.files.get('file')
+        if not file:
+            return jsonify({'ok': False, 'error': 'no file provided'}), 400
+        filename = file.filename or 'upload.pdf'
+        file_bytes = file.read()
+
     if TOKEN == 'YOUR_MINERU_API_TOKEN':
         return jsonify({'ok': False, 'error': 'please set TOKEN in backend/app.py'}), 500
-
-    filename = file.filename or 'upload.pdf'
     if not is_supported_file(filename):
         return jsonify({'ok': False, 'error': 'unsupported file type, please upload pdf, word, excel, ppt, or image files'}), 400
 
-    file_bytes = file.read()
     chunks = [(filename, file_bytes)]
     if get_file_extension(filename) == '.pdf':
         try:
@@ -291,33 +308,5 @@ def update_quota():
         conn.close()
 
 
-@parse_blueprint.route('/upload', methods=['POST', 'OPTIONS'])
-def upload_file():
-    if request.method == 'OPTIONS':
-        return '', 204
-
-    file = request.files.get('file')
-    if not file:
-        return jsonify({'success': False, 'error': 'no file provided'}), 400
-
-    raw_name = file.filename or 'upload'
-    safe_filename = Path(raw_name).name
-    save_path = Path(__file__).resolve().parent.parent.parent.parent.parent / 'assets' / 'file'
-    save_path.mkdir(parents=True, exist_ok=True)
-    dest = save_path / safe_filename
-
-    override = request.form.get('override') == 'true'
-    if dest.exists():
-        if not override:
-            return jsonify({'success': False, 'duplicate': True, 'filename': safe_filename}), 409
-        dest.unlink()
-
-    file.save(str(dest))
-    file_url = f"/api/files/{safe_filename}"
-    return jsonify({'success': True, 'file_id': Path(safe_filename).stem, 'url': file_url})
-
-
-@parse_blueprint.route('/files/<path:filename>', methods=['GET'])
-def serve_file(filename):
-    file_dir = Path(__file__).resolve().parent.parent.parent.parent.parent / 'assets' / 'file'
-    return send_from_directory(str(file_dir), filename)
+# 文件上传统一由文件管理模块处理（file_router.py）
+# 知识提取不再单独提供上传和文件服务

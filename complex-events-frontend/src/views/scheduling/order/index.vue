@@ -641,7 +641,7 @@ import axios from 'axios'
 
 const BASE = import.meta.env.VITE_APP_BASE_API || ''
 const API = `${BASE}/api`        // WorkOrderManagement 蓝图（/api 前缀）
-const SAPI = `${BASE}/scheduling` // SchedulingdataManagement 蓝图（/scheduling 前缀）
+const SAPI = `${BASE}/api` // SchedulingdataManagement 蓝图（/scheduling 前缀）
 
 // 工单面板展开状态
 const taskPanelOpen = ref(true)
@@ -695,7 +695,7 @@ const fetchEquipmentTypes = async () => {
 const fetchEquipmentByType = async (typeId) => {
   try {
     const res = await axios.get(`${SAPI}/equipment-instances/by-type/${encodeURIComponent(typeId)}`)
-    equipmentInstances.value = res.data?.data || res.data
+    equipmentInstances.value = res.data?.data?.equipment_instances || []|| res.data
   } catch (error) {
     console.error('获取设备实例失败', error)
   }

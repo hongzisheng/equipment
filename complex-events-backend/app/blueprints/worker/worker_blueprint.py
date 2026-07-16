@@ -23,7 +23,7 @@ def get_workers():
                 """
                 SELECT w.id, w.name, w.worker_type_id, w.is_certified,
                        w.organization, w.emp_id, w.compose,
-                       w.status,
+                       w.status, w.skill_level, w.phone,
                        COALESCE(wt.name, w.worker_type_id) AS worker_type_name
                 FROM workers w
                 LEFT JOIN worker_types wt ON w.worker_type_id = wt.id
@@ -43,6 +43,8 @@ def get_workers():
                         "compose": row[6] or "",
                         "status": row[7],
                         "worker_type": row[8],
+                        "skill_level": row[9],
+                        "phone": row[10]
                     }
                 )
         return Result.success(

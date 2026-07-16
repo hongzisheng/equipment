@@ -1,6 +1,6 @@
 // /src/settings.js
 const settings = {
-  title: '复杂事件系统',
+  title: '设备调度系统',
 
   /**
    * @type {boolean} true | false

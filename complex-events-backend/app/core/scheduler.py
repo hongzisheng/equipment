@@ -482,7 +482,7 @@ class Scheduler(IScheduler):
                 equipment_tasks[equipment_id]["tasks"].append(
                     {
                         "task_id": task_id,
-                        "process_id": f"{equipment_id}_{process_id}",
+                        "process_id": process_id,
                         "process_name": process_name,
                         "duration": estimated_day,
                         "worker_requirements": json.loads(required_workers)
@@ -492,6 +492,12 @@ class Scheduler(IScheduler):
                         "is_milestone": bool(is_milestone),
                     }
                 )
+
+            # 建立 task_id → process_id 映射，用于前置工序关联
+            task_id_map = {}
+            for eq_id, data in equipment_tasks.items():
+                for task_data in data["tasks"]:
+                    task_id_map[task_data["task_id"]] = task_data["process_id"]
 
             # 为每个设备创建 Equipment 和 Process 实例
             for eq_id, data in equipment_tasks.items():
@@ -504,13 +510,17 @@ class Scheduler(IScheduler):
                     continue
                 equipment.processes = []
                 for task_data in data["tasks"]:
+                    original_predecessors = task_data["predecessor_ids"]
+                    mapped_predecessors = [
+                        task_id_map[pid] for pid in original_predecessors if pid in task_id_map
+                    ]
                     proc = Process(
                         id=task_data["process_id"],
                         name=task_data["process_name"],
                         duration=task_data["duration"],
                         equipment_id=eq_id,
                         worker_requirements=task_data["worker_requirements"],
-                        predecessor_ids=task_data["predecessor_ids"],
+                        predecessor_ids=mapped_predecessors,
                     )
                     equipment.processes.append(proc)
 
@@ -591,21 +601,17 @@ class Scheduler(IScheduler):
                 ),
             )
             # 更新 work_order_tasks 的计划时间
-            parts = task["process_id"].split("_", 1)
-            equipment_id = parts[0]
-            raw_process_id = parts[1] if len(parts) > 1 else task["process_id"]
             c.execute(
                 """
                 UPDATE work_order_tasks
                 SET scheduled_start_time = ?, scheduled_end_time = ?, workers = ?
-                WHERE equipment_id = ? AND process_id = ?
+                WHERE process_id = ?
             """,
                 (
                     task["start_time_formatted"],
                     task["end_time_formatted"],
                     json.dumps(task["workers"], ensure_ascii=False),
-                    equipment_id,
-                    raw_process_id,
+                    task["process_id"],
                 ),
             )
         conn.commit()

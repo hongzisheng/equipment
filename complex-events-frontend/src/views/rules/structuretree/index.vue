@@ -929,8 +929,4 @@ path {
   }
   .header-tools { width: 100%; }
 }
-<<<<<<< HEAD
 </style>
-=======
-</style>
->>>>>>> c589649ceb11edd98eb5b9fff54865511d861051

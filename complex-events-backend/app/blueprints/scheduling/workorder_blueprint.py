@@ -311,7 +311,7 @@ def get_process_templates():
                     SELECT id, equipment_type_id, process_code, description, estimated_hours,
                            required_workers, predecessor_codes, parent_process_code,
                            is_major_process, material_requirements, tools_requirements,
-                           material_price, tools_price
+                           material_price, tools_price, worker_price
                     FROM process_templates
                     WHERE equipment_type_id = ?
                     ORDER BY process_code
@@ -324,7 +324,7 @@ def get_process_templates():
                     SELECT id, equipment_type_id, process_code, description, estimated_hours,
                            required_workers, predecessor_codes, parent_process_code,
                            is_major_process, material_requirements, tools_requirements,
-                           material_price, tools_price
+                           material_price, tools_price, worker_price
                     FROM process_templates
                     ORDER BY equipment_type_id, process_code
                 """
@@ -361,7 +361,7 @@ def get_process_templates_by_equipment_type(equipment_type_id):
                 SELECT id, equipment_type_id, process_code, description, estimated_hours,
                        required_workers, predecessor_codes, parent_process_code,
                        is_major_process, material_requirements, tools_requirements,
-                       material_price, tools_price
+                       material_price, tools_price, worker_price
                 FROM process_templates
                 WHERE equipment_type_id = ?
                 ORDER BY process_code

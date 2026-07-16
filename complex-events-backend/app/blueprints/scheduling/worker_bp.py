@@ -11,12 +11,12 @@ def get_worker_types():
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
-            c.execute('SELECT id, name, description, requires_certification, created_at FROM worker_types ORDER BY id')
+            c.execute('SELECT id, name, description, requires_certification, created_at, price FROM worker_types ORDER BY id')
             worker_types = []
             for row in c.fetchall():
                 worker_types.append({
                     'id': row[0], 'name': row[1], 'description': row[2],
-                    'requires_certification': bool(row[3]), 'created_at': row[4]
+                    'requires_certification': bool(row[3]), 'created_at': row[4], 'price': row[5]
                 })
         return Result.success(data=worker_types, message="查询成功")
     except Exception as e:

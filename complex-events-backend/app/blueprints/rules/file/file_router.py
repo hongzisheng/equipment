@@ -1,0 +1,195 @@
+# file_router.py 顶部
+import os
+import uuid
+import sqlite3
+import datetime
+from pathlib import Path
+from flask import Blueprint, request, jsonify, send_file, make_response
+from werkzeug.utils import secure_filename
+from app.utils import get_db_path 
+# file_router.py 顶部新增
+import datetime
+
+def init_file_table():
+    db_path = get_db_path()  # 复用 utils 中的数据库路径
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS uploaded_files (
+            id TEXT PRIMARY KEY,
+            original_name TEXT NOT NULL,
+            saved_path TEXT NOT NULL,
+            category TEXT NOT NULL,   -- '定额' 或 '规程'
+            upload_time TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# 在模块加载时初始化表
+init_file_table()
+
+file_bp = Blueprint('file', __name__, url_prefix='/api')
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+QUOTA_FOLDER = PROJECT_ROOT / 'assets' / 'quotafile'
+PROCEDURE_FOLDER = PROJECT_ROOT / 'assets' / 'procedurefile'
+ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'txt'}
+
+QUOTA_FOLDER.mkdir(parents=True, exist_ok=True)
+PROCEDURE_FOLDER.mkdir(parents=True, exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# 内存存储上传文件信息（生产环境可改用数据库）
+@file_bp.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '没有文件部分'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '未选择文件'}), 400
+    if not allowed_file(file.filename):
+        return jsonify({'success': False, 'message': '仅支持 PDF、Word、Excel、JPG、PNG、TXT 文件'}), 400
+
+    # 获取分类参数（前端通过表单字段传递）
+    category = request.form.get('category', '未分类')
+    if category not in ['定额', '规程']:
+        return jsonify({'success': False, 'message': '分类必须为 "定额" 或 "规程"'}), 400
+
+    # 获取原始文件名，优先使用前端传递的 original_name
+    original_name = request.form.get('original_name', file.filename)
+    if not original_name:
+        original_name = file.filename
+    
+    # 保留原始文件名中的中文等 Unicode 字符，仅剔除路径分隔符等危险字符
+    file_id = str(uuid.uuid4())
+    raw_name = file.filename or 'file'
+    safe_filename = raw_name.replace('/', '').replace('\\', '').replace('\0', '').replace('..', '')
+    if not safe_filename or '.' not in safe_filename:
+        ext = raw_name.rsplit('.', 1)[-1].lower() if '.' in raw_name else ''
+        safe_filename = f"file.{ext}" if ext else 'file'
+    saved_filename = safe_filename
+    target_folder = QUOTA_FOLDER if category == '定额' else PROCEDURE_FOLDER
+    filepath = target_folder / saved_filename
+
+    # 检测重名：文件已存在时，若前端未要求覆盖则返回冲突
+    overwrite = request.form.get('overwrite', 'false').lower() == 'true'
+    if filepath.exists():
+        if not overwrite:
+            return jsonify({
+                'success': False,
+                'conflict': True,
+                'filename': original_name,
+                'message': f'文件 "{original_name}" 已存在，是否覆盖？'
+            }), 409
+        # 覆盖模式：删掉旧的 DB 记录
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM uploaded_files WHERE saved_path = ?', (str(filepath),))
+        conn.commit()
+        conn.close()
+
+    file.save(filepath)
+
+    # 写入数据库，保存完整的原始文件名
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO uploaded_files (id, original_name, saved_path, category, upload_time) VALUES (?, ?, ?, ?, ?)',
+        (file_id, original_name, str(filepath), category, datetime.datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'message': '上传成功',
+        'file_id': file_id,
+        'file_name': original_name,
+        'category': category,
+        'url': f"http://localhost:5000/api/pdf/{file_id}"
+    })
+
+@file_bp.route('/pdf/<file_id>', methods=['GET'])
+def get_pdf(file_id):
+    """根据 file_id 返回 PDF 文件流，并强制添加 CORS 头"""
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT saved_path FROM uploaded_files WHERE id = ?', (file_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    file_path = row['saved_path']
+    if not os.path.exists(file_path):
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    response = make_response(send_file(file_path, mimetype='application/pdf'))
+    return response
+
+
+@file_bp.route('/files/<file_id>', methods=['DELETE'])
+def delete_file(file_id):
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT saved_path FROM uploaded_files WHERE id = ?', (file_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    saved_path = row['saved_path']
+    try:
+        if os.path.exists(saved_path):
+            os.remove(saved_path)
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'message': f'删除文件失败: {e}'}), 500
+
+    cursor.execute('DELETE FROM uploaded_files WHERE id = ?', (file_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'message': '删除成功'})
+
+
+@file_bp.route('/files', methods=['GET'])
+def list_files():
+    category = request.args.get('category')  # 可选筛选
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    if category:
+        cursor.execute('SELECT id, original_name, saved_path, category, upload_time FROM uploaded_files WHERE category = ? ORDER BY upload_time DESC', (category,))
+    else:
+        cursor.execute('SELECT id, original_name, saved_path, category, upload_time FROM uploaded_files ORDER BY upload_time DESC')
+
+    rows = cursor.fetchall()
+
+    # 自动清理：文件已不存在的记录从数据库中删除
+    valid_files = []
+    for row in rows:
+        if os.path.exists(row['saved_path']):
+            valid_files.append(dict(row))
+        else:
+            cursor.execute('DELETE FROM uploaded_files WHERE id = ?', (row['id'],))
+
+    conn.commit()
+    conn.close()
+
+    # 返回时去掉 saved_path 避免泄露服务器路径
+    result = [{k: v for k, v in f.items() if k != 'saved_path'} for f in valid_files]
+    return jsonify({'success': True, 'data': result})

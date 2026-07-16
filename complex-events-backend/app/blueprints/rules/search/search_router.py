@@ -53,7 +53,7 @@ def get_graph_chapters():
                 WHERE r.source_type = '册名'
                   AND r.target_type = '章节'
                   AND r.relation_type = '包含章节'
-                  AND json_extract(s.attributes, '$.名称') = ?
+                  AND s.entity_id = ?
                 ORDER BY t.entity_id
             """, (volume,))
         else:
@@ -187,7 +187,7 @@ def search_graph_processes():
         params = []
 
         if volume:
-            sql += " AND json_extract(vol.attributes, '$.名称') LIKE ?"
+            sql += " AND vol.entity_id LIKE ?"
             params.append(f'%{volume}%')
         if chapter:
             sql += " AND json_extract(chap.attributes, '$.名称') LIKE ?"

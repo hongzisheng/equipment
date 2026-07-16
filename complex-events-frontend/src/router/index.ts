@@ -142,6 +142,12 @@ export const constantRoutes: RouteItem[] = [
         component: () => import('@/views/rules/search/index.vue'),
         meta: { title: '搜索区' },
       },
+      {
+        path: '/rules/file',
+        name: '文件管理',
+        component: () => import('@/views/rules/file/index.vue'),
+        meta: { title: '文件管理' },
+      },
     ],
   },
   {

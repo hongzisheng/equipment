@@ -430,9 +430,9 @@
       <div class="icon-item" @click="showAddEquipmentDialog" title="添加单个设备数据">
         <img src="@/assets/iconfont/添加.png" class="function-icon" alt="添加单个设备数据" />
       </div>
-      <!-- 下载模板 -->
-      <div class="icon-item" @click="downloadTemplate" title="下载Excel模板">
-        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel模板" />
+      <!-- 下载数据 -->
+      <div class="icon-item" @click="downloadEquipmentData" title="下载Excel数据">
+        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel数据" />
       </div>
       <!-- 导入文件 -->
       <div class="icon-item" @click="triggerFileUpload" title="上传Excel文件">
@@ -1067,18 +1067,52 @@ function handleSizeChange(newSize) {
 function handleCurrentChange(newPage) {
   currentPage.value = newPage
 }
-// 下载模板
-async function downloadTemplate() {
+// 导出设备数据为 Excel 文件
+function downloadEquipmentData() {
   try {
     downloading.value = true
-    // 直接从public目录下载Excel模板文件
-    const link = document.createElement('a')
-    link.href = '/设备实例表模版.xlsx'
-    link.download = '设备实例表模版.xlsx'
-    link.click()
-    ElMessage.success('模板开始下载')
-  } catch {
-    ElMessage.error('模板下载失败')
+
+    // 从树结构中提取所有设备实例
+    const instances = []
+    const root = treeData.value[0]
+    if (root && root.children) {
+      root.children.forEach(category => {
+        if (category.children) {
+          category.children.forEach(kind => {
+            if (kind.children) {
+              kind.children.forEach(instance => {
+                instances.push(instance)
+              })
+            }
+          })
+        }
+      })
+    }
+
+    const exportFields = [
+      { key: 'id', label: '设备ID' },
+      { key: 'name', label: '设备名称' },
+      { key: 'category', label: '设备分类' },
+      { key: 'equipment_type_id', label: '设备类型ID' },
+      { key: 'equipment_type_name', label: '设备类型名称' },
+      { key: 'created_time', label: '创建时间' },
+    ]
+
+    const headerRow = exportFields.map(f => f.label)
+    const dataRows = instances.map(item =>
+      exportFields.map(f => item[f.key] ?? '')
+    )
+    const worksheetData = [headerRow, ...dataRows]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '设备数据')
+
+    XLSX.writeFile(workbook, '设备数据.xlsx')
+    ElMessage.success(`成功导出 ${dataRows.length} 条设备数据`)
+  } catch (error) {
+    console.error('导出数据失败:', error)
+    ElMessage.error('导出数据失败: ' + (error.message || '未知错误'))
   } finally {
     downloading.value = false
   }

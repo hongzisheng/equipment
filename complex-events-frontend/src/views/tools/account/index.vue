@@ -174,10 +174,10 @@
         <img src="@/assets/iconfont/添加.png" class="function-icon" alt="添加单个机具数据" />
         <div class="icon-label">添加单个数据</div>
       </div>
-      <!-- 图标2：下载模板 -->
-      <div class="icon-item" @click="downloadTemplate" title="下载Excel模板">
-        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel模板" />
-        <div class="icon-label">下载模板</div>
+      <!-- 图标2：下载数据 -->
+      <div class="icon-item" @click="downloadToolData" title="下载Excel数据">
+        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel数据" />
+        <div class="icon-label">下载数据</div>
       </div>
       <!-- 图标3：导入文件 -->
       <div class="icon-item" @click="triggerFileUpload" title="上传Excel文件">
@@ -643,17 +643,37 @@ function resetSearch() {
   currentPage.value = 1
 }
 
-async function downloadTemplate() {
+// 导出机具数据为 Excel 文件
+function downloadToolData() {
   try {
     downloading.value = true
-    // 直接从public目录下载Excel模板文件
-    const link = document.createElement('a')
-    link.href = '/维修器具表模版.xlsx'
-    link.download = '维修器具表模版.xlsx'
-    link.click()
-    ElMessage.success('模板开始下载')
-  } catch {
-    ElMessage.error('模板下载失败')
+
+    const exportFields = [
+      { key: 'id', label: '机具编号' },
+      { key: 'name', label: '机具名称' },
+      { key: 'tool_type', label: '机具类型' },
+      { key: 'is_available', label: '是否可用' },
+      { key: 'requires_operator', label: '是否需要操作员' },
+      { key: 'capacity', label: '重量' },
+      { key: 'daily_rental_cost', label: '日租金' },
+      { key: 'created_at', label: '创建时间' },
+    ]
+
+    const headerRow = exportFields.map(f => f.label)
+    const dataRows = tools.value.map(tool =>
+      exportFields.map(f => tool[f.key] ?? '')
+    )
+    const worksheetData = [headerRow, ...dataRows]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '机具数据')
+
+    XLSX.writeFile(workbook, '维修机具数据.xlsx')
+    ElMessage.success(`成功导出 ${dataRows.length} 条机具数据`)
+  } catch (error) {
+    console.error('导出数据失败:', error)
+    ElMessage.error('导出数据失败: ' + (error.message || '未知错误'))
   } finally {
     downloading.value = false
   }

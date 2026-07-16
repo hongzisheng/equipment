@@ -164,7 +164,7 @@ def batch_import_equipment():
             for equipment in equipment_list:
                 try:
                     equipment_type_id = equipment.get("equipment_type_id")
-                    equipment_name = equipment.get("equipment_name")
+                    equipment_name = equipment.get("equipment_name") or equipment.get("name")
                     equipment_category = equipment.get("equipment_category", "")
 
                     if not equipment_type_id or not equipment_name:

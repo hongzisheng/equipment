@@ -126,10 +126,10 @@
         <img src="@/assets/iconfont/添加.png" class="function-icon" alt="添加单个物料数据" />
         <div class="icon-label">添加单个数据</div>
       </div>
-      <!-- 图标2：下载模板 -->
-      <div class="icon-item" @click="downloadTemplate" title="下载Excel模板">
-        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel模板" />
-        <div class="icon-label">下载模板</div>
+      <!-- 图标2：下载数据 -->
+      <div class="icon-item" @click="downloadMaterialData" title="下载Excel数据">
+        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel数据" />
+        <div class="icon-label">下载数据</div>
       </div>
       <!-- 图标3：导入文件 -->
       <div class="icon-item" @click="triggerFileUpload" title="上传Excel文件">
@@ -440,17 +440,35 @@ function resetSearch() {
   currentPage.value = 1
 }
 
-async function downloadTemplate() {
+// 导出物料数据为 Excel 文件
+function downloadMaterialData() {
   try {
     downloading.value = true
-    // 直接从public目录下载Excel模板文件
-    const link = document.createElement('a')
-    link.href = '/物料表模版.xlsx'
-    link.download = '物料表模版.xlsx'
-    link.click()
-    ElMessage.success('模板开始下载')
-  } catch {
-    ElMessage.error('模板下载失败')
+
+    const exportFields = [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: '物料名称' },
+      { key: 'price', label: '单价' },
+      { key: 'stock_quantity', label: '库存数量' },
+      { key: 'unit', label: '单位' },
+      { key: 'created_at', label: '创建时间' },
+    ]
+
+    const headerRow = exportFields.map(f => f.label)
+    const dataRows = materials.value.map(material =>
+      exportFields.map(f => material[f.key] ?? '')
+    )
+    const worksheetData = [headerRow, ...dataRows]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '物料数据')
+
+    XLSX.writeFile(workbook, '物料数据.xlsx')
+    ElMessage.success(`成功导出 ${dataRows.length} 条物料数据`)
+  } catch (error) {
+    console.error('导出数据失败:', error)
+    ElMessage.error('导出数据失败: ' + (error.message || '未知错误'))
   } finally {
     downloading.value = false
   }

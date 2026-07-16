@@ -22,7 +22,7 @@ def get_workers():
             c.execute(
                 """
                 SELECT w.id, w.name, w.worker_type_id, w.is_certified,
-                       w.organization, w.emp_id, w.compose, w.created_time,
+                       w.organization, w.emp_id, w.compose,
                        w.status,
                        COALESCE(wt.name, w.worker_type_id) AS worker_type_name
                 FROM workers w
@@ -41,9 +41,8 @@ def get_workers():
                         "organization": row[4] or "",
                         "emp_id": row[5],
                         "compose": row[6] or "",
-                        "created_time": row[7],
-                        "status": row[8],
-                        "worker_type": row[9],
+                        "status": row[7],
+                        "worker_type": row[8],
                     }
                 )
         return Result.success(
@@ -76,10 +75,10 @@ def add_worker():
             c.execute(
                 """
                 INSERT INTO workers
-                    (worker_type_id, name, is_certified, organization, compose, created_time)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (worker_type_id, name, is_certified, organization, compose)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (worker_type, worker_name, int(is_certified), organization, compose, now),
+                (worker_type, worker_name, int(is_certified), organization, compose),
             )
             conn.commit()
 
@@ -181,8 +180,15 @@ def batch_import_workers():
             for worker in workers_list:
                 try:
                     worker_type = worker.get("worker_type")
-                    worker_name = worker.get("worker_name")
-                    certified = worker.get("is_certified", False)
+                    worker_name = worker.get("worker_name") or worker.get("name")
+                    certified_raw = worker.get("is_certified", False)
+                    # 兼容多种格式：1/0、"是"/"否"、True/False
+                    if isinstance(certified_raw, str):
+                        certified = 1 if certified_raw.strip() in ("是", "yes", "true", "1") else 0
+                    elif isinstance(certified_raw, bool):
+                        certified = 1 if certified_raw else 0
+                    else:
+                        certified = int(certified_raw) if certified_raw else 0
                     organization = worker.get("organization", "")
                     compose = worker.get("compose", "")
 
@@ -196,16 +202,15 @@ def batch_import_workers():
                     c.execute(
                         """
                         INSERT INTO workers
-                            (worker_type_id, name, is_certified, organization, compose, created_time)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (worker_type_id, name, is_certified, organization, compose)
+                        VALUES (?, ?, ?, ?, ?)
                         """,
                         (
                             worker_type,
                             worker_name,
-                            int(certified) if certified else 0,
+                            certified,
                             organization,
                             compose,
-                            now,
                         ),
                     )
                     success_count += 1

@@ -163,10 +163,10 @@
         <img src="@/assets/iconfont/添加.png" class="function-icon" alt="添加单个工人数据" />
         <div class="icon-label">添加单个数据</div>
       </div>
-      <!-- 图标2：下载模板 -->
-      <div class="icon-item" @click="downloadTemplate" title="下载Excel模板">
-        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel模板" />
-        <div class="icon-label">下载模板</div>
+      <!-- 图标2：下载数据 -->
+      <div class="icon-item" @click="downloadWorkerData" title="下载Excel数据">
+        <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel数据" />
+        <div class="icon-label">下载数据</div>
       </div>
       <!-- 图标3：导入文件 -->
       <div class="icon-item" @click="triggerFileUpload" title="上传Excel文件">
@@ -557,29 +557,40 @@ function resetSearch() {
   currentPage.value = 1
 }
 
-async function downloadTemplate() {
+// 导出工人数据为 Excel 文件
+function downloadWorkerData() {
   try {
     downloading.value = true
-    // 创建一个包含所有必要字段的工作表
-    const worksheetData = [
-      ['name', 'worker_type', 'is_certified', 'organization'],
-      ['张三', '电工', '是', '电气车间'],
-      ['李四', '钳工', '否', '机械车间']
-    ];
-    
-    // 创建工作簿
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '工人数据模板');
-    
-    // 导出文件
-    XLSX.writeFile(workbook, '工人表模版.xlsx');
-    ElMessage.success('模板下载成功');
+
+    // 字段映射（与表格列保持一致）
+    const exportFields = [
+      { key: 'id', label: '工号' },
+      { key: 'name', label: '姓名' },
+      { key: 'worker_type', label: '工种' },
+      { key: 'is_certified', label: '是否持证' },
+      { key: 'organization', label: '组织' },
+      { key: 'compose', label: '班组' },
+      { key: 'status', label: '状态' },
+    ]
+
+    // 构建工作表数据：第一行为表头，后续行为数据行
+    const headerRow = exportFields.map(f => f.label)
+    const dataRows = workers.value.map(worker =>
+      exportFields.map(f => worker[f.key] ?? '')
+    )
+    const worksheetData = [headerRow, ...dataRows]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '工人数据')
+
+    XLSX.writeFile(workbook, '工人数据.xlsx')
+    ElMessage.success(`成功导出 ${dataRows.length} 条工人数据`)
   } catch (error) {
-    console.error('模板生成失败:', error);
-    ElMessage.error('模板生成失败: ' + (error.message || '未知错误'));
+    console.error('导出数据失败:', error)
+    ElMessage.error('导出数据失败: ' + (error.message || '未知错误'))
   } finally {
-    downloading.value = false;
+    downloading.value = false
   }
 }
 

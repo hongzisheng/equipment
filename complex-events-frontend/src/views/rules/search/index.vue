@@ -29,6 +29,7 @@
               clearable
               filterable
               :disabled="deviceLoading"
+              @change="onDeviceChange"
             >
               <el-option
                 v-for="item in deviceOptions"
@@ -184,7 +185,7 @@ const displayResults = computed(() => {
 // ---------- 加载选项 ----------
 async function loadCategories() {
   try {
-    const res = await apiRequest('/api/equipment-categories')
+    const res = await apiRequest('/api/graph-archive/volumes')
     categoryOptions.value = res.code === 20000 || res.success ? (res.data || []) : []
   } catch (e) {
     categoryOptions.value = []
@@ -195,8 +196,8 @@ async function loadCategories() {
 async function loadDevices(categoryId = '') {
   deviceLoading.value = true
   try {
-    let url = '/api/equipment-types'
-    if (categoryId) url += `?category=${encodeURIComponent(categoryId)}`
+    let url = '/api/graph-archive/chapters'
+    if (categoryId) url += `?volume=${encodeURIComponent(categoryId)}`
     const res = await apiRequest(url)
     if (res.code === 20000 || res.success) {
       deviceOptions.value = (res.data || []).map(item => ({ name: item.name }))
@@ -213,21 +214,23 @@ async function loadDevices(categoryId = '') {
 
 async function onCategoryChange(categoryId) {
   form.value.device = ''
+  form.value.process = ''
   categoryId ? await loadDevices(categoryId) : await loadDevices()
+  await loadProcessOptions()
 }
 
-async function loadProcessOptions() {
+async function onDeviceChange(deviceName) {
+  form.value.process = ''
+  await loadProcessOptions(deviceName)
+}
+
+async function loadProcessOptions(chapterName) {
   try {
-    const res = await apiRequest('/api/all-process-templates')
+    let url = '/api/graph-archive/processes'
+    if (chapterName) url += `?chapter=${encodeURIComponent(chapterName)}`
+    const res = await apiRequest(url)
     if (res?.success) {
-      const set = new Set()
-      const equipmentProcesses = res.equipment_processes || {}
-      Object.values(equipmentProcesses).forEach(group => {
-        (group?.processes || []).forEach(proc => {
-          if (proc?.description) set.add(proc.description)
-        })
-      })
-      processOptions.value = Array.from(set)
+      processOptions.value = (res.data || []).map(item => item.name).filter(Boolean)
     } else {
       processOptions.value = []
     }
@@ -242,17 +245,24 @@ async function fetchResultsByForm() {
   resultsLoading.value = true
   try {
     const payload = {
-      category: form.value.category || '',
-      device: form.value.device || '',
-      process: form.value.process || '',
-      measureValue: form.value.measureValue || ''
+      volume: form.value.category || '',
+      chapter: form.value.device || '',
+      process: form.value.process || ''
     }
-    const response = await apiRequest('/api/search-processes', {
+    const response = await apiRequest('/api/search-graph-processes', {
       method: 'POST',
       body: payload
     })
     if (response?.success) {
-      allResults.value = response.data || []
+      // 将后端字段映射到前端表格字段
+      allResults.value = (response.data || []).map(item => ({
+        equipment: item.chapter || '未关联',
+        process: item.process || '未关联',
+        measure_value: item.measure_value || '-',
+        man_hours: item.base_price ?? 0,
+        labor_cost: item.labor_cost ?? 0,
+        equipment_cost: item.equipment_cost ?? 0
+      }))
       safeSetStorage(SEARCH_RESULTS_KEY, JSON.stringify(allResults.value))
     } else {
       allResults.value = []

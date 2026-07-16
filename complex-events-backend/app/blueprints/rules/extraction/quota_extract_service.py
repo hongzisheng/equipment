@@ -42,9 +42,9 @@ learned_resource_types = {}
 # ===================== 移除标题编号前缀（册/章/节） =====================
 def remove_title_prefix(title):
     """移除"第X册"、"第X章"、"第X节"等编号前缀，只保留纯名称"""
-    title = re.sub(r'^第[一二三四五六七八九十\d]+册\s*', '', title)
-    title = re.sub(r'^第[一二三四五六七八九十\d]+章\s*', '', title)
-    title = re.sub(r'^第[一二三四五六七八九十\d]+节\s*', '', title)
+    title = re.sub(r'^第[一二三四五六七八九十廿卅\d]+册\s*', '', title)
+    title = re.sub(r'^第[一二三四五六七八九十廿卅\d]+章\s*', '', title)
+    title = re.sub(r'^第[一二三四五六七八九十廿卅\d]+节\s*', '', title)
     return title.strip()
 
 
@@ -83,11 +83,11 @@ def save_learned_types():
 
 # ===================== 提取标题编号（用于自动排序） =====================
 def get_title_number(name):
-    match = re.search(r'第([一二三四五六七八九十\d]+)[节小节]', name)
+    match = re.search(r'第([一二三四五六七八九十廿卅\d]+)[节小节]', name)
     if match:
         num_str = match.group(1)
     else:
-        match = re.search(r'^([一二三四五六七八九十\d]+)[.、)]|^([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])', name)
+        match = re.search(r'^([一二三四五六七八九十廿卅\d]+)[.、)]|^([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])', name)
         if match:
             num_str = match.group(1) or match.group(2)
         else:
@@ -95,6 +95,7 @@ def get_title_number(name):
 
     num_map = {
         '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+        '廿': 20, '卅': 30,
         '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5, '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
         '⑪': 11, '⑫': 12, '⑬': 13, '⑭': 14, '⑮': 15, '⑯': 16, '⑰': 17, '⑱': 18, '⑲': 19, '⑳': 20
     }
@@ -437,7 +438,8 @@ def extract_hierarchy(content):
         r'(?:\(\d+\)\s*)|'
         r'(?:\([一二三四五六七八九十百千]+\)\s*)|'
         r'(?:[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]+)\s*|'
-        r'(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]+[.、]\s*))'
+        r'(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]+[.、]\s*)|'
+        r'(?:第[一二三四五六七八九十廿卅\d]+[册章节]\s+))'
         r'([^#\n]+?)(?=\n|$)',
         re.M
     )
@@ -448,25 +450,31 @@ def extract_hierarchy(content):
 
     for i in range(len(matches)):
         raw_title = matches[i].group(2).strip()
+        full_text = matches[i].group(0).strip()
         title = clean_text(raw_title)
+        full_clean = clean_text(full_text)
+        # 对册/章/节结构判断优先使用完整匹配文本（含"第X章"前缀），
+        # 因为部分标题被 title_pat 剥离了"第X章"前缀
+        struct_text = full_clean if re.match(r'^第', full_clean) else title
         start = matches[i].end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
         sec_content = content[start:end].strip()
 
-        if re.match(r'^第[一二三四五六七八九十\d]+册', title):
-            hierarchy["册名"] = remove_title_prefix(title)
+        if re.match(r'^第[一二三四五六七八九十廿卅\d]+册', struct_text):
+            if not hierarchy["册名"]:  # 只取第一个出现的册名
+                hierarchy["册名"] = remove_title_prefix(struct_text)
             current_chapter = None
             current_section = None
             continue
 
-        if re.match(r'^第[一二三四五六七八九十\d]+章', title):
-            current_chapter = {"名称": remove_title_prefix(title), "直接工序": []}
+        if re.match(r'^第[一二三四五六七八九十廿卅\d]+章', struct_text):
+            current_chapter = {"名称": remove_title_prefix(struct_text), "直接工序": []}
             hierarchy["章节"].append(current_chapter)
             current_section = None
             continue
 
-        if re.match(r'^第[一二三四五六七八九十\d]+节', title):
-            current_section = {"名称": remove_title_prefix(title), "直接工序": []}
+        if re.match(r'^第[一二三四五六七八九十廿卅\d]+节', struct_text):
+            current_section = {"名称": remove_title_prefix(struct_text), "直接工序": []}
             if current_chapter:
                 if "节" not in current_chapter:
                     current_chapter["节"] = []

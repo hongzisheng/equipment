@@ -189,7 +189,7 @@
 <el-table-column prop="process" label="工序" min-width="150" />
 <el-table-column prop="measurementDimension" label="计量维度" min-width="160" />
 <el-table-column prop="measurementValue" label="计量值" min-width="120" align="center" />
-<el-table-column prop="manHours" label="需要的人工时(工时)" min-width="160" align="center" />
+<el-table-column prop="manHours" label="需要的人工(工日)" min-width="160" align="center" />
 <el-table-column prop="laborCost" label="工人费用(元)" min-width="140" align="center" />
 <el-table-column prop="toolCost" label="机具费用(元)" min-width="140" align="center" />
 <el-table-column label="操作" width="110" align="center">
@@ -222,7 +222,7 @@
           <el-form-item label="计量值">
             <el-input v-model="editForm.measurementValue" />
           </el-form-item>
-          <el-form-item label="需要的人工时(工时)">
+          <el-form-item label="需要的人工(工日)">
             <el-input v-model="editForm.manHours" />
           </el-form-item>
           <el-form-item label="工人费用(元)">

@@ -81,12 +81,12 @@
             class="results-table"
             empty-text="暂无检索结果"
           >
-            <el-table-column prop="equipment" label="设备" min-width="120" />
-            <el-table-column prop="process" label="工序" min-width="140" />
+            <el-table-column prop="process" label="工序" min-width="150" />
+            <el-table-column prop="measure_dimension" label="计量维度" min-width="160" />
             <el-table-column prop="measure_value" label="计量值" min-width="100" />
-            <el-table-column prop="man_hours" label="需要的人工时" min-width="120" />
-            <el-table-column prop="labor_cost" label="工人费用" min-width="120" />
-            <el-table-column prop="equipment_cost" label="机具费用" min-width="120" />
+            <el-table-column prop="man_hours" label="需要的人工(工日)" min-width="160" />
+            <el-table-column prop="labor_cost" label="工人费用(元)" min-width="140" />
+            <el-table-column prop="tool_cost" label="机具费用(元)" min-width="140" />
           </el-table>
         </div>
       </div>
@@ -160,17 +160,15 @@ const hasSearched = ref(false)
 const hasFilters = computed(() => {
   const v = lastSearchForm.value
   const filled = (input) => input !== null && input !== undefined && String(input).trim() !== ''
-  return filled(v.category) || filled(v.device) || filled(v.process) || filled(v.measureValue)
+  return filled(v.process) || filled(v.measureValue)
 })
 
 // 前端二次过滤
 const filteredResults = computed(() => {
   const value = lastSearchForm.value
-  const device = (value.device || '').trim()
   const process = (value.process || '').trim()
 
   return allResults.value.filter(item => {
-    if (device && !String(item.equipment || '').includes(device)) return false
     if (process && !String(item.process || '').includes(process)) return false
     return true
   })
@@ -256,12 +254,12 @@ async function fetchResultsByForm() {
     if (response?.success) {
       // 将后端字段映射到前端表格字段
       allResults.value = (response.data || []).map(item => ({
-        equipment: item.chapter || '未关联',
         process: item.process || '未关联',
+        measure_dimension: item.measure_dimension || '-',
         measure_value: item.measure_value || '-',
-        man_hours: item.base_price ?? 0,
+        man_hours: item.total_work_days ?? 0,
         labor_cost: item.labor_cost ?? 0,
-        equipment_cost: item.equipment_cost ?? 0
+        tool_cost: item.tool_cost ?? 0
       }))
       safeSetStorage(SEARCH_RESULTS_KEY, JSON.stringify(allResults.value))
     } else {

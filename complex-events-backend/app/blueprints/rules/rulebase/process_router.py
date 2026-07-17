@@ -272,36 +272,34 @@ def add_process_template():
                 'message': '预计工时、物料费用和工具费用必须是数字'
             }), 400
 
-        # 生成模板ID
-        template_id = f"{equipment_type_id}-{process_code}"
-
         # 连接到数据库
         db_path = get_db_path()
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
 
-        # 检查是否已存在相同ID的模板
-        c.execute('SELECT id FROM process_templates WHERE id = ?', (template_id,))
+        # 检查是否已存在相同设备+工序码的模板
+        c.execute('SELECT id FROM process_templates WHERE equipment_type_id = ? AND process_code = ?',
+                  (equipment_type_id, process_code))
         if c.fetchone():
             conn.close()
             return jsonify({
                 'success': False,
-                'message': f'工序模板 {template_id} 已存在'
+                'message': f'工序模板 {equipment_type_id}-{process_code} 已存在'
             }), 400
 
         # 插入工序模板到数据库
         c.execute('''
                   INSERT INTO process_templates
-                  (id, equipment_type_id, process_code, description, estimated_hours,
+                  (equipment_type_id, process_code, description, estimated_hours,
                    required_workers, predecessor_codes, parent_process_code, is_major_process,
-                   material_requirements, material_price, tools_requirements, tools_price, created_time)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   material_requirements, material_price, tools_requirements, tools_price)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                   ''', (
-                      template_id, equipment_type_id, process_code, description,
+                      equipment_type_id, process_code, description,
                       estimated_hours, json.dumps(required_workers),
                       json.dumps(predecessor_codes), parent_process_code,
                       is_major_process, material_requirements, material_price,
-                      tools_requirements, tools_price, datetime.datetime.now()
+                      tools_requirements, tools_price
                   ))
 
         conn.commit()
@@ -314,7 +312,6 @@ def add_process_template():
         return jsonify({
             'success': True,
             'message': f'工序模板 {process_code} 添加成功',
-            'template_id': template_id
         })
 
     except Exception as e:
@@ -546,13 +543,11 @@ def batch_import_process_templates():
                     error_messages.append(f"预计工时必须是数字: {template}")
                     continue
 
-                # 生成模板ID
-                template_id = f"{equipment_type_id}-{process_code}"
-
-                # 检查是否已存在相同ID的模板
-                c.execute('SELECT id FROM process_templates WHERE id = ?', (template_id,))
+                # 检查是否已存在相同的工序模板
+                c.execute('SELECT id FROM process_templates WHERE equipment_type_id = ? AND process_code = ?',
+                          (equipment_type_id, process_code))
                 if c.fetchone():
-                    error_messages.append(f"工序模板 {template_id} 已存在")
+                    error_messages.append(f"工序模板 {equipment_type_id}-{process_code} 已存在")
                     continue
 
                 # 插入工序模板到数据库
@@ -560,14 +555,14 @@ def batch_import_process_templates():
                           INSERT INTO process_templates
                           (equipment_type_id, process_code, description, estimated_hours,
                            required_workers, predecessor_codes, parent_process_code, is_major_process,
-                           material_requirements, material_price, tools_requirements, tools_price, created_time)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           material_requirements, material_price, tools_requirements, tools_price)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                           ''', (
                               equipment_type_id, process_code, description,
                               estimated_hours, json.dumps(required_workers),
                               json.dumps(predecessor_codes), parent_process_code,
                               is_major_process, material_requirements, material_price,
-                              tools_requirements, tools_price, datetime.datetime.now()
+                              tools_requirements, tools_price
                           ))
 
                 success_count += 1

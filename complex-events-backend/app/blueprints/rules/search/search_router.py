@@ -157,15 +157,13 @@ def search_graph_processes():
 
         sql = """
             SELECT
-                json_extract(vol.attributes, '$.名称') AS volume_name,
-                json_extract(chap.attributes, '$.名称') AS chapter_name,
                 json_extract(proc.attributes, '$.名称') AS process_name,
                 json_extract(q.attributes, '$.计量维度') AS measure_dimension,
                 json_extract(q.attributes, '$.计量值') AS measure_value,
-                json_extract(q.attributes, '$.基价(元)') AS base_price,
                 json_extract(q.attributes, '$.人工费(元)') AS labor_cost,
                 json_extract(q.attributes, '$.材料费(元)') AS material_cost,
-                json_extract(q.attributes, '$.机械费(元)') AS machine_cost
+                json_extract(q.attributes, '$.机械费(元)') AS machine_cost,
+                json_extract(labor.attributes, '$.人工明细[0].使用数量') AS total_work_days
             FROM graph_nodes_archive q
             LEFT JOIN graph_relations_archive r1
                 ON r1.target_id = q.entity_id AND r1.relation_type = '包含定额'
@@ -182,6 +180,10 @@ def search_graph_processes():
                 ON r3.target_id = chap.entity_id AND r3.relation_type = '包含章节'
             LEFT JOIN graph_nodes_archive vol
                 ON vol.entity_id = r3.source_id AND vol.entity_type = '册名'
+            LEFT JOIN graph_relations_archive r_labor
+                ON r_labor.source_id = q.entity_id AND r_labor.relation_type = '包含人工明细'
+            LEFT JOIN graph_nodes_archive labor
+                ON labor.entity_id = r_labor.target_id
             WHERE q.entity_type = '定额编号'
         """
         params = []
@@ -196,7 +198,7 @@ def search_graph_processes():
             sql += " AND json_extract(proc.attributes, '$.名称') LIKE ?"
             params.append(f'%{process_name}%')
 
-        sql += " ORDER BY vol.entity_id, chap.entity_id, proc.entity_id"
+        sql += " ORDER BY proc.entity_id"
 
         c.execute(sql, params)
         rows = c.fetchall()
@@ -216,14 +218,12 @@ def search_graph_processes():
             material = to_num(row['material_cost'])
             machine = to_num(row['machine_cost'])
             results.append({
-                'volume': row['volume_name'] or '未关联',
-                'chapter': row['chapter_name'] or '未关联',
                 'process': row['process_name'] or '未关联',
+                'measure_dimension': row['measure_dimension'] or '-',
                 'measure_value': row['measure_value'] or '-',
-                'base_price': to_num(row['base_price']),
-                'labor_cost': labor,
-                'equipment_cost': material + machine,
-                'tool_cost': material + machine
+                'total_work_days': to_num(row['total_work_days']),
+                'labor_cost': round(labor, 2),
+                'tool_cost': round(material + machine, 2)
             })
 
         return jsonify({'success': True, 'data': results})

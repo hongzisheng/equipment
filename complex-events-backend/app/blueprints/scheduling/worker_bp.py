@@ -120,3 +120,87 @@ def update_worker_team():
         return Result.success(message="工人池分配更新成功")
     except Exception as e:
         return Result.fail(message=f"更新工人池数据失败: {str(e)}")
+
+
+@scheduling_worker_bp.route('/worker-types', methods=['POST'])
+def add_worker_type():
+    try:
+        data = request.get_json()
+        if not data:
+            return Result.fail(message="缺少请求体")
+        worker_id = data.get('id')
+        name = data.get('name')
+        if not worker_id or not name:
+            return Result.fail(message="工种ID和名称不能为空")
+        description = data.get('description', '')
+        price = data.get('price', 0)
+        requires_certification = data.get('requires_certification', False)
+
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT id FROM worker_types WHERE id = ?', (worker_id,))
+            if c.fetchone():
+                return Result.fail(message=f"工种ID '{worker_id}' 已存在")
+
+            c.execute(
+                'INSERT INTO worker_types (id, name, description, price, requires_certification) VALUES (?, ?, ?, ?, ?)',
+                (worker_id, name, description, float(price), bool(requires_certification))
+            )
+            conn.commit()
+        return Result.success(message="工种添加成功")
+    except Exception as e:
+        return Result.fail(message=f"添加工种失败: {str(e)}")
+
+
+@scheduling_worker_bp.route('/worker-types/<worker_id>', methods=['PUT'])
+def update_worker_type(worker_id):
+    try:
+        data = request.get_json()
+        if not data:
+            return Result.fail(message="缺少请求体")
+
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT id FROM worker_types WHERE id = ?', (worker_id,))
+            if not c.fetchone():
+                return Result.fail(message=f"工种 '{worker_id}' 不存在")
+
+            update_fields = []
+            update_values = []
+            if 'name' in data:
+                update_fields.append('name = ?')
+                update_values.append(data['name'])
+            if 'description' in data:
+                update_fields.append('description = ?')
+                update_values.append(data['description'])
+            if 'price' in data:
+                update_fields.append('price = ?')
+                update_values.append(float(data['price']))
+            if 'requires_certification' in data:
+                update_fields.append('requires_certification = ?')
+                update_values.append(bool(data['requires_certification']))
+
+            if not update_fields:
+                return Result.fail(message="没有提供要更新的字段")
+
+            update_values.append(worker_id)
+            c.execute(f'UPDATE worker_types SET {", ".join(update_fields)} WHERE id = ?', update_values)
+            conn.commit()
+        return Result.success(message="工种更新成功")
+    except Exception as e:
+        return Result.fail(message=f"更新工种失败: {str(e)}")
+
+
+@scheduling_worker_bp.route('/worker-types/<worker_id>', methods=['DELETE'])
+def delete_worker_type(worker_id):
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT id FROM worker_types WHERE id = ?', (worker_id,))
+            if not c.fetchone():
+                return Result.fail(message=f"工种 '{worker_id}' 不存在")
+            c.execute('DELETE FROM worker_types WHERE id = ?', (worker_id,))
+            conn.commit()
+        return Result.success(message="工种删除成功")
+    except Exception as e:
+        return Result.fail(message=f"删除工种失败: {str(e)}")

@@ -15,7 +15,6 @@ from .rules.extraction.parse_router import parse_blueprint
 from .rules.tree.tree_router import tree_bp
 from .chat.chat_blueprint import chat_bp
 
-from .WorkOrderManagement import workorder_mgmt_bp
 from .rules.search.search_router import search_archive_bp
 from .rules.file.file_router import file_bp
 from .rules.extraction.procedure_router import procedure_bp

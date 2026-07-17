@@ -10,6 +10,7 @@ import jwt
 from flask import Blueprint, jsonify, request
 
 from app.core import run_scheduling, get_scheduler
+from app import core
 
 
 def get_db_path():
@@ -139,6 +140,7 @@ def run_scheduler():
         if not work_order_ids:
             return jsonify({'success': False, 'message': '请至少选择一个工单进行调度'}), 400
 
+        core.reset_scheduler()
         formatted_plan, statistics, success, message = run_scheduling(work_order_ids, algorithm_name)
 
         if not success:

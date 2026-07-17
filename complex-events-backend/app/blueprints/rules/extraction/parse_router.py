@@ -9,11 +9,11 @@ from pypdf import PdfReader, PdfWriter
 import requests
 import requests.exceptions
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-from .quota_extract_service import extract_and_import_from_markdown, query_quotas
+from .quota_extract_service import extract_and_import_from_markdown, query_quotas, clean_latex_text
 import sqlite3
 import json
 from pathlib import Path
@@ -134,17 +134,44 @@ def parse_document():
     if request.method == 'OPTIONS':
         return '', 204
 
+    file_id = request.form.get('file_id')
+    if file_id:
+        # 从文件管理读取已上传文件，优先使用预转换的 markdown
+        db_path = get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT md_path, saved_path, original_name FROM uploaded_files WHERE id = ?', (file_id,))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'ok': False, 'error': 'file not found'}), 404
+
+        # 如果已有预转换的 markdown，直接返回
+        md_path = row['md_path']
+        if md_path:
+            try:
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    markdown = f.read()
+                return jsonify({'ok': True, 'markdown': markdown, 'saved': os.path.basename(md_path)})
+            except Exception as e:
+                return jsonify({'ok': False, 'error': f'读取 markdown 失败: {str(e)}'}), 500
+
+        # 未转换则返回提示
+        return jsonify({'ok': False, 'error': '文件尚未转换为 markdown，请先在文件管理页面转换'}), 400
+
+    # 没有 file_id 时的直接上传（兼容旧调用）
     file = request.files.get('file')
     if not file:
         return jsonify({'ok': False, 'error': 'no file provided'}), 400
+    filename = file.filename or 'upload.pdf'
+    file_bytes = file.read()
+
     if TOKEN == 'YOUR_MINERU_API_TOKEN':
         return jsonify({'ok': False, 'error': 'please set TOKEN in backend/app.py'}), 500
-
-    filename = file.filename or 'upload.pdf'
     if not is_supported_file(filename):
         return jsonify({'ok': False, 'error': 'unsupported file type, please upload pdf, word, excel, ppt, or image files'}), 400
 
-    file_bytes = file.read()
     chunks = [(filename, file_bytes)]
     if get_file_extension(filename) == '.pdf':
         try:
@@ -244,7 +271,7 @@ def update_quota():
         attrs = json.loads(row[0]) if row[0] else {}
 
         if measurement_dimension is not None:
-            attrs['计量维度'] = measurement_dimension
+            attrs['计量维度'] = clean_latex_text(measurement_dimension)
         if measurement_value is not None:
             attrs['计量值'] = measurement_value
         if labor_cost is not None:
@@ -291,33 +318,5 @@ def update_quota():
         conn.close()
 
 
-@parse_blueprint.route('/upload', methods=['POST', 'OPTIONS'])
-def upload_file():
-    if request.method == 'OPTIONS':
-        return '', 204
-
-    file = request.files.get('file')
-    if not file:
-        return jsonify({'success': False, 'error': 'no file provided'}), 400
-
-    raw_name = file.filename or 'upload'
-    safe_filename = Path(raw_name).name
-    save_path = Path(__file__).resolve().parent.parent.parent.parent.parent / 'assets' / 'file'
-    save_path.mkdir(parents=True, exist_ok=True)
-    dest = save_path / safe_filename
-
-    override = request.form.get('override') == 'true'
-    if dest.exists():
-        if not override:
-            return jsonify({'success': False, 'duplicate': True, 'filename': safe_filename}), 409
-        dest.unlink()
-
-    file.save(str(dest))
-    file_url = f"/api/files/{safe_filename}"
-    return jsonify({'success': True, 'file_id': Path(safe_filename).stem, 'url': file_url})
-
-
-@parse_blueprint.route('/files/<path:filename>', methods=['GET'])
-def serve_file(filename):
-    file_dir = Path(__file__).resolve().parent.parent.parent.parent.parent / 'assets' / 'file'
-    return send_from_directory(str(file_dir), filename)
+# 文件上传统一由文件管理模块处理（file_router.py）
+# 知识提取不再单独提供上传和文件服务

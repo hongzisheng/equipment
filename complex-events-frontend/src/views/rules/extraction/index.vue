@@ -9,45 +9,40 @@
           <el-card shadow="hover" class="upload-card">
             <div class="upload-toolbar">
               <h2 class="upload-title">上传区</h2>
-              <el-button type="primary" class="upload-btn" @click="showUploadDialog = true">
-                上传文件
+              <el-button type="primary" class="upload-btn" @click="showFilePicker = true">
+                选择文件
               </el-button>
             </div>
 
             <div class="uploaded-files-section compact-module">
               <div class="section-header">
-                <h3 class="section-title">已上传文件 ({{ uploadedFiles.length }})</h3>
+                <h3 class="section-title">已选文件 ({{ selectedFiles.length }})</h3>
                 <el-button
                   type="text"
                   class="clear-btn"
                   @click="clearFiles"
-                  :disabled="!uploadedFiles.length"
+                  :disabled="!selectedFiles.length"
                 >
                   清空列表
                 </el-button>
               </div>
               <div class="files-list">
-                <div v-if="!uploadedFiles.length" class="empty-files">暂无文件</div>
+                <div v-if="!selectedFiles.length" class="empty-files">暂无文件</div>
                 <div
                   v-else
                   class="file-item-card"
-                  v-for="(file, index) in uploadedFiles"
+                  v-for="(file, index) in selectedFiles"
                   :key="index"
                 >
                   <div class="file-info">
-                    <span class="file-name">{{ file.name }}</span>
+                    <span class="file-name">{{ file.original_name }}</span>
                     <el-button
                       type="text"
                       class="delete-btn"
                       @click="deleteFile(index)"
-                      :disabled="file.loading"
                     >
                       删除
                     </el-button>
-                  </div>
-                  <div v-if="file.loading" class="file-progress">
-                    <el-progress :percentage="file.percent" :stroke-width="6" size="small" />
-                    <span class="progress-text">{{ file.statusText }}</span>
                   </div>
                 </div>
               </div>
@@ -56,41 +51,66 @@
                 type="primary"
                 class="extract-btn"
                 @click="startExtraction"
-                :disabled="!uploadedFiles.length"
+                :disabled="!selectedFiles.length || extractLoading"
+                :loading="extractLoading"
               >
-                开始提取知识
+                {{ extractLoading ? '提取中...' : '开始提取知识' }}
               </el-button>
             </div>
 
-            <el-dialog v-model="showUploadDialog" title="选择文件" width="560px">
-              <div class="dialog-upload-body">
-                <div class="drop-zone" @click="openFilePicker">
-                  <el-icon class="cloud-icon"><UploadFilled /></el-icon>
-                  <div class="drop-text">拖拽文件到此处，或点击上传</div>
-                  <div class="support-text">支持 PDF 格式（仅PDF可预览）</div>
+            <!-- 从文件管理选择对话框（两步式） -->
+            <el-dialog v-model="showFilePicker" :title="dialogTitle" width="640px">
+              <!-- 第一步：选择文件类型 -->
+              <div v-if="step === 1" class="step-type-select">
+                <div class="type-card type-card-quota" @click="selectCategory('定额')">
+                  <el-icon class="type-icon"><PriceTag /></el-icon>
+                  <div class="type-card-content">
+                    <span class="type-name">定额文件</span>
+                    <span class="type-desc">检修定额标准文件</span>
+                  </div>
                 </div>
-                <div class="file-types-section">
-                  <h3 class="section-title">支持文件类型</h3>
-                  <div class="file-types-grid">
-                    <div class="file-type-card pdf">PDF</div>
-                    <div class="file-type-card word">WORD</div>
-                    <div class="file-type-card excel">EXCEL</div>
-                    <div class="file-type-card jpg">JPG</div>
-                    <div class="file-type-card png">PNG</div>
-                    <div class="file-type-card txt">TXT</div>
+                <div class="type-card type-card-procedure" @click="selectCategory('规程')">
+                  <el-icon class="type-icon"><Document /></el-icon>
+                  <div class="type-card-content">
+                    <span class="type-name">规程文件</span>
+                    <span class="type-desc">维护检修规程文件</span>
+                  </div>
+                </div>
+              </div>
+              <!-- 第二步：文件列表 -->
+              <div v-else class="dialog-upload-body">
+                <div class="back-bar">
+                  <el-button text @click="goBack">
+                    <el-icon><ArrowLeft /></el-icon> 返回选择类型
+                  </el-button>
+                  <el-tag :type="selectedCategory === '定额' ? 'success' : 'warning'" effect="dark" size="small">
+                    {{ selectedCategory }}
+                  </el-tag>
+                </div>
+                <div v-loading="loadingMgmt" class="mgmt-file-list">
+                  <div v-if="!loadingMgmt && mgmtFiles.length === 0" class="empty-files">
+                    暂无{{ selectedCategory }}文件
+                  </div>
+                  <el-table v-else :data="mgmtFiles" @selection-change="onMgmtSelectionChange" ref="mgmtTableRef">
+                    <el-table-column type="selection" width="44" />
+                    <el-table-column prop="original_name" label="文件名" show-overflow-tooltip />
+                    <el-table-column prop="upload_time" label="上传时间" width="160" />
+                    <el-table-column label="状态" width="90" align="center">
+                      <template #default="{ row }">
+                        <el-tag v-if="row.converted" type="success" size="small">已转换</el-tag>
+                        <el-tag v-else type="info" size="small">未转换</el-tag>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                  <div class="mgmt-footer">
+                    <span class="mgmt-count">已选 {{ mgmtSelected.length }} 项</span>
+                    <el-button type="primary" @click="confirmMgmtSelection" :disabled="!mgmtSelected.length">
+                      确认选择
+                    </el-button>
                   </div>
                 </div>
               </div>
             </el-dialog>
-
-            <input
-              ref="uploadInputRef"
-              class="hidden-input"
-              type="file"
-              multiple
-              accept=".pdf"
-              @change="handleFileChange"
-            />
           </el-card>
         </div>
 
@@ -169,7 +189,7 @@
 <el-table-column prop="process" label="工序" min-width="150" />
 <el-table-column prop="measurementDimension" label="计量维度" min-width="160" />
 <el-table-column prop="measurementValue" label="计量值" min-width="120" align="center" />
-<el-table-column prop="manHours" label="需要的人工时(工时)" min-width="160" align="center" />
+<el-table-column prop="manHours" label="需要的人工(工日)" min-width="160" align="center" />
 <el-table-column prop="laborCost" label="工人费用(元)" min-width="140" align="center" />
 <el-table-column prop="toolCost" label="机具费用(元)" min-width="140" align="center" />
 <el-table-column label="操作" width="110" align="center">
@@ -202,7 +222,7 @@
           <el-form-item label="计量值">
             <el-input v-model="editForm.measurementValue" />
           </el-form-item>
-          <el-form-item label="需要的人工时(工时)">
+          <el-form-item label="需要的人工(工日)">
             <el-input v-model="editForm.manHours" />
           </el-form-item>
           <el-form-item label="工人费用(元)">
@@ -222,17 +242,17 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
-  UploadFilled,
   ArrowLeft,
   ArrowRight,
   ZoomOut,
   ZoomIn,
   FullScreen,
   Document,
-  Loading
+  Loading,
+  PriceTag
 } from '@element-plus/icons-vue'
 import * as pdfjsLib from 'pdfjs-dist'
 
@@ -247,13 +267,22 @@ const pdfCmapOptions = {
 // 后端接口地址（需根据实际部署调整）
 const API_BASE = '/api'
 
-// ========== 上传相关 ==========
-const uploadInputRef = ref(null)
-const uploadedFiles = ref([])
-const showUploadDialog = ref(false)
+// ========== 文件选择相关 ==========
+const selectedFiles = ref([])       // 从文件管理选中的文件
+const showFilePicker = ref(false)   // 文件选择对话框
+const mgmtFiles = ref([])           // 文件管理列表
+const mgmtSelected = ref([])        // 对话框中勾选的文件
+const mgmtTableRef = ref(null)
+const loadingMgmt = ref(false)
+const extractLoading = ref(false)
 
-// 本地存储键名（方便未来版本升级）
-const UPLOADED_FILES_KEY = 'knowledge_uploaded_files_v1'
+// --- 新增：两步文件选择状态 ---
+const step = ref(1)              // 1=类型选择，2=文件列表
+const selectedCategory = ref('') // '定额' 或 '规程'
+const dialogTitle = computed(() => {
+  if (step.value === 1) return '选择文件类型'
+  return `选择${selectedCategory.value}文件`
+})
 
 // ========== PDF 预览相关 ==========
 let pdfDoc = null
@@ -279,8 +308,59 @@ watch([allTableData, currentPage, pageSize], () => {
 }, { immediate: true })
 
 // ========== 辅助函数 ==========
-function openFilePicker() {
-  uploadInputRef.value.click()
+// ========== 从文件管理选取 ==========
+async function loadMgmtFiles(category) {
+  loadingMgmt.value = true
+  try {
+    const url = category ? `${API_BASE}/files?category=${category}` : `${API_BASE}/files`
+    const resp = await fetch(url)
+    const data = await resp.json()
+    mgmtFiles.value = (data.success && Array.isArray(data.data)) ? data.data : []
+  } catch (e) {
+    mgmtFiles.value = []
+    ElMessage.error('加载文件列表失败')
+  } finally {
+    loadingMgmt.value = false
+  }
+}
+
+function onMgmtSelectionChange(selection) {
+  mgmtSelected.value = selection
+}
+
+function selectCategory(category) {
+  selectedCategory.value = category
+  step.value = 2
+  loadMgmtFiles(category)
+  mgmtTableRef.value?.clearSelection()
+  mgmtSelected.value = []
+}
+
+function goBack() {
+  step.value = 1
+  selectedCategory.value = ''
+  mgmtFiles.value = []
+  mgmtSelected.value = []
+}
+
+function confirmMgmtSelection() {
+  for (const item of mgmtSelected.value) {
+    const exists = selectedFiles.value.some(f => f.file_id === item.id)
+    if (!exists) {
+      selectedFiles.value.push({
+        file_id: item.id,
+        original_name: item.original_name,
+        category: item.category,
+        upload_time: item.upload_time,
+        converted: item.converted
+      })
+    }
+  }
+  showFilePicker.value = false
+  // 自动预览第一个 PDF
+  if (selectedFiles.value.length && !pdfDoc) {
+    loadPdfForPreview(`${API_BASE}/pdf/${selectedFiles.value[0].file_id}`)
+  }
 }
 
 function formatAmount(value) {
@@ -403,96 +483,8 @@ async function saveEdit() {
   }
 }
 
-    async function uploadOne(file) {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const resp = await fetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await resp.json()
-
-      // 重名检测：询问用户是否覆盖
-      if (data.duplicate) {
-        try {
-          await ElMessageBox.confirm(
-            `文件 "${data.filename}" 已存在，是否覆盖？覆盖后旧数据将丢失。`,
-            '文件已存在',
-            { confirmButtonText: '覆盖', cancelButtonText: '取消', type: 'warning' }
-          )
-          // 用户选择覆盖，重新上传带 override 标记
-          const overrideForm = new FormData()
-          overrideForm.append('file', file)
-          overrideForm.append('override', 'true')
-          const resp2 = await fetch(`${API_BASE}/upload`, {
-            method: 'POST',
-            body: overrideForm,
-          })
-          const data2 = await resp2.json()
-          if (!data2.success) throw new Error(data2.error || '覆盖上传失败')
-          return data2
-        } catch {
-          // 用户取消，跳过此文件
-          return null
-        }
-      }
-
-      if (!data.success) throw new Error(data.error || '上传失败')
-      return data
-    }
-
-    async function handleFileChange(e) {
-      const files = e.target.files
-      if (!files.length) return
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        if (file.type !== 'application/pdf') {
-          ElMessage.warning(`文件 ${file.name} 不是 PDF，仅 PDF 可预览，但仍可上传用于知识提取`)
-        }
-
-        const uploadItem = {
-          name: file.name,
-          file: file,
-          loading: true,
-          percent: 0,
-          statusText: '上传中...',
-          file_id: null,
-          pdfUrl: null
-        }
-        uploadedFiles.value.push(uploadItem)
-        const idx = uploadedFiles.value.length - 1
-
-        try {
-          const data = await uploadOne(file)
-          if (!data) {
-            // 用户取消了覆盖，移除列表项
-            uploadedFiles.value.splice(idx, 1)
-            continue
-          }
-
-          uploadedFiles.value[idx].percent = 100
-          uploadedFiles.value[idx].loading = false
-          uploadedFiles.value[idx].statusText = '已上传'
-          uploadedFiles.value[idx].file_id = data.file_id
-          uploadedFiles.value[idx].pdfUrl = data.url
-
-          // 如果是 PDF 且尚无预览，自动加载第一个 PDF
-          if (file.type === 'application/pdf' && !pdfDoc) {
-            loadPdfForPreview(data.url)
-          }
-        } catch (err) {
-          uploadedFiles.value[idx].loading = false
-          uploadedFiles.value[idx].statusText = '上传失败'
-          ElMessage.error(`上传 ${file.name} 失败：${err.message}`)
-        }
-  }
-  uploadInputRef.value.value = ''
-}
-
 function clearFiles() {
-  uploadedFiles.value = []
+  selectedFiles.value = []
   if (pdfDoc) {
     pdfDoc.destroy()
     pdfDoc = null
@@ -504,29 +496,20 @@ function clearFiles() {
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
   }
-  // 同步清除持久化数据
-  try { localStorage.removeItem(UPLOADED_FILES_KEY) } catch (e) { /* ignore */ }
 }
 
 function deleteFile(index) {
-  const file = uploadedFiles.value[index]
-  if (file.loading) {
-    ElMessage.warning('文件正在处理，请稍后再试')
-    return
+  const file = selectedFiles.value[index]
+  selectedFiles.value.splice(index, 1)
+  if (pdfDoc) {
+    pdfDoc.destroy()
+    pdfDoc = null
   }
-  uploadedFiles.value.splice(index, 1)
-  // 如果当前预览的是被删除的文件，则尝试切换到下一个可预览的 PDF，否则清空预览
-  if (pdfDoc && file.pdfUrl === pdfDoc.url) {
-    const nextPdf = uploadedFiles.value.find(f => f.pdfUrl)
-    if (nextPdf) {
-      loadPdfForPreview(nextPdf.pdfUrl)
-    } else {
-      clearFiles()
-    }
+  currentPageNum.value = 0
+  totalPages.value = 0
+  if (selectedFiles.value.length) {
+    loadPdfForPreview(`${API_BASE}/pdf/${selectedFiles.value[0].file_id}`)
   }
-
-  // 删除后持久化
-  persistUploadedFiles()
 }
 
 async function loadPdfForPreview(url) {
@@ -624,21 +607,33 @@ watch(scale, () => {
 })
 
 async function startExtraction() {
-  if (!uploadedFiles.value.length) {
-    ElMessage.warning('请先上传文件')
+  if (!selectedFiles.value.length) {
+    ElMessage.warning('请先选择文件')
     return
   }
-  uploadedFiles.value.forEach(f => {
-    f.loading = true
-    f.statusText = '提取中...'
-    f.percent = 0
-  })
-  try {
-    for (const fileItem of uploadedFiles.value) {
-      const formData = new FormData()
-      formData.append('file', fileItem.file)
 
-      // 第一步：调用 /api/parse 获取 markdown
+  // 检查定额文件是否已转换 markdown
+  const unconverted = selectedFiles.value.filter(f => f.category === '定额' && !f.converted)
+  if (unconverted.length > 0) {
+    const names = unconverted.map(f => `"${f.original_name}"`).join('、')
+    ElMessage.warning(`以下文件尚未转换为 markdown，请在文件管理页面先转换：${names}`)
+    return
+  }
+
+  extractLoading.value = true
+  let successCount = 0
+  try {
+    for (const fileItem of selectedFiles.value) {
+      // 规程文件暂不支持提取
+      if (fileItem.category === '规程') {
+        ElMessage.warning(`"${fileItem.original_name}" 是规程文件，提取功能暂未实现，已跳过`)
+        continue
+      }
+
+      const formData = new FormData()
+      formData.append('file_id', fileItem.file_id)
+
+      // 第一步：调用 /api/parse 获取 markdown（通过 file_id 读取）
       const resp = await fetch(`${API_BASE}/parse`, {
         method: 'POST',
         body: formData
@@ -663,21 +658,16 @@ async function startExtraction() {
       if (!importResp.ok || !importResult.ok) {
         throw new Error(importResult.error || '入库失败')
       }
-
-      fileItem.percent = 100
-      fileItem.statusText = '已入库'
-      fileItem.loading = false
+      successCount++
     }
     await loadQuotaData()
-    ElMessage.success('知识提取并入库完成')
+    if (successCount > 0) {
+      ElMessage.success(`知识提取完成，成功处理 ${successCount} 个文件`)
+    }
   } catch (err) {
     ElMessage.error(`提取失败：${err.message}`)
-    uploadedFiles.value.forEach(f => {
-      if (f.loading) {
-        f.loading = false
-        f.statusText = '提取失败'
-      }
-    })
+  } finally {
+    extractLoading.value = false
   }
 }
 
@@ -685,9 +675,18 @@ function exportTable() { ElMessage.info('导出功能待实现') }
 function fieldSettings() { ElMessage.info('字段设置待实现') }
 
 onMounted(() => {
-  // 先恢复上传队列，再加载定额数据
-  restoreUploadedFiles()
   loadQuotaData()
+})
+
+// 对话框关闭时重置步骤
+watch(showFilePicker, (val) => {
+  if (!val) {
+    step.value = 1
+    selectedCategory.value = ''
+    mgmtFiles.value = []
+    mgmtSelected.value = []
+    mgmtTableRef.value?.clearSelection()
+  }
 })
 
 onUnmounted(() => {
@@ -696,55 +695,6 @@ onUnmounted(() => {
     pdfDoc = null
   }
 })
-
-// ========== 上传持久化相关 ==========
-function persistUploadedFiles() {
-  try {
-    const serial = uploadedFiles.value.map(f => ({
-      name: f.name || '',
-      loading: !!f.loading,
-      percent: f.percent || 0,
-      statusText: f.statusText || '',
-      file_id: f.file_id || null,
-      pdfUrl: f.pdfUrl || null
-    }))
-    localStorage.setItem(UPLOADED_FILES_KEY, JSON.stringify(serial))
-  } catch (e) {
-    console.warn('保存上传列表到 localStorage 失败', e)
-  }
-}
-
-function restoreUploadedFiles() {
-  try {
-    const raw = localStorage.getItem(UPLOADED_FILES_KEY)
-    if (!raw) return
-    const arr = JSON.parse(raw)
-    if (!Array.isArray(arr) || !arr.length) return
-    // 恢复为没有 File 对象的条目（file 字段置 null）
-    uploadedFiles.value = arr.map(item => ({
-      name: item.name || '未知文件',
-      file: null,
-      loading: false,
-      percent: item.percent || 0,
-      statusText: item.statusText || (item.file_id ? '已上传' : ''),
-      file_id: item.file_id || null,
-      pdfUrl: item.pdfUrl || null
-    }))
-
-    // 自动预览第一个可预览的 PDF
-    const firstPdf = uploadedFiles.value.find(f => f.pdfUrl)
-    if (firstPdf && !pdfDoc) {
-      loadPdfForPreview(firstPdf.pdfUrl)
-    }
-  } catch (e) {
-    console.warn('从 localStorage 恢复上传列表失败', e)
-  }
-}
-
-// 监控 uploadedFiles 变化并持久化（节流可选，当前简单保存）
-watch(uploadedFiles, () => {
-  persistUploadedFiles()
-}, { deep: true })
 </script>
 
 <style scoped>
@@ -1108,5 +1058,70 @@ watch(uploadedFiles, () => {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 8px;
+}
+
+/* ========== 两步文件选择样式 ========== */
+.step-type-select {
+  display: flex;
+  gap: 20px;
+  padding: 20px 0;
+  justify-content: center;
+}
+.type-card {
+  flex: 1;
+  max-width: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 20px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: #fafafa;
+}
+.type-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.type-card-quota:hover {
+  border-color: #67c23a;
+  background: #f0f9eb;
+}
+.type-card-procedure:hover {
+  border-color: #e6a23c;
+  background: #fdf6ec;
+}
+.type-icon {
+  font-size: 40px;
+  color: #606266;
+}
+.type-card-quota:hover .type-icon {
+  color: #67c23a;
+}
+.type-card-procedure:hover .type-icon {
+  color: #e6a23c;
+}
+.type-card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.type-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.type-desc {
+  font-size: 13px;
+  color: #909399;
+}
+.back-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 </style>

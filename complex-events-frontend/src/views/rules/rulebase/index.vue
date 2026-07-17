@@ -1521,7 +1521,7 @@ function deleteProcess(row) {
     }
   ).then(async () => {
     try {
-      const templateId = `${currentRuleKey.value}-${row.process_code}`
+      const templateId = row.id
       
       const response = await request({
         url: `/api/process-templates/${templateId}`,

@@ -86,7 +86,6 @@ export const useUserStore = defineStore(
         logoutApi(token.value)
           .then(() => {
             removeToken() // must remove token first
-            resetRouter()
             resetState()
             resolve()
           })

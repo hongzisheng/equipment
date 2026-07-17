@@ -22,4 +22,7 @@ defineProps<{
 
 </script>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+/* 菜单项样式已统一迁移至 MenuBar/index.vue 的 .sidebar-menu :deep() 中，
+   以避免 Vue 3 Fragment 组件中 :deep() 选择器无法匹配根元素的问题。 */
+</style>

@@ -10,7 +10,8 @@ from app.blueprints import (
     worker_bp, equipment_bp, tools_bp, materials_bp,
     scheduling_worker_bp, scheduling_equipment_bp,
     rules_process_bp, parse_blueprint, tree_bp, chat_bp,
-    workorder_mgmt_bp, search_archive_bp, schedule_bp, file_bp
+    workorder_mgmt_bp, search_archive_bp, schedule_bp, file_bp,
+    procedure_bp
 )
 from app.extension import init_extensions
 from app.services.database_service import check_database_status
@@ -55,6 +56,7 @@ def register_blueprints(app: Flask):
     app.register_blueprint(search_archive_bp, url_prefix="/api")
     app.register_blueprint(schedule_bp)
     app.register_blueprint(file_bp)
+    app.register_blueprint(procedure_bp, url_prefix="/api")
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):

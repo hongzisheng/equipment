@@ -95,6 +95,12 @@
                     <el-table-column type="selection" width="44" />
                     <el-table-column prop="original_name" label="文件名" show-overflow-tooltip />
                     <el-table-column prop="upload_time" label="上传时间" width="160" />
+                    <el-table-column label="状态" width="90" align="center">
+                      <template #default="{ row }">
+                        <el-tag v-if="row.converted" type="success" size="small">已转换</el-tag>
+                        <el-tag v-else type="info" size="small">未转换</el-tag>
+                      </template>
+                    </el-table-column>
                   </el-table>
                   <div class="mgmt-footer">
                     <span class="mgmt-count">已选 {{ mgmtSelected.length }} 项</span>
@@ -345,7 +351,8 @@ function confirmMgmtSelection() {
         file_id: item.id,
         original_name: item.original_name,
         category: item.category,
-        upload_time: item.upload_time
+        upload_time: item.upload_time,
+        converted: item.converted
       })
     }
   }
@@ -604,10 +611,25 @@ async function startExtraction() {
     ElMessage.warning('请先选择文件')
     return
   }
+
+  // 检查定额文件是否已转换 markdown
+  const unconverted = selectedFiles.value.filter(f => f.category === '定额' && !f.converted)
+  if (unconverted.length > 0) {
+    const names = unconverted.map(f => `"${f.original_name}"`).join('、')
+    ElMessage.warning(`以下文件尚未转换为 markdown，请在文件管理页面先转换：${names}`)
+    return
+  }
+
   extractLoading.value = true
   let successCount = 0
   try {
     for (const fileItem of selectedFiles.value) {
+      // 规程文件暂不支持提取
+      if (fileItem.category === '规程') {
+        ElMessage.warning(`"${fileItem.original_name}" 是规程文件，提取功能暂未实现，已跳过`)
+        continue
+      }
+
       const formData = new FormData()
       formData.append('file_id', fileItem.file_id)
 
@@ -639,7 +661,9 @@ async function startExtraction() {
       successCount++
     }
     await loadQuotaData()
-    ElMessage.success(`知识提取完成，成功处理 ${successCount} 个文件`)
+    if (successCount > 0) {
+      ElMessage.success(`知识提取完成，成功处理 ${successCount} 个文件`)
+    }
   } catch (err) {
     ElMessage.error(`提取失败：${err.message}`)
   } finally {

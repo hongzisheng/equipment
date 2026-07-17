@@ -13,7 +13,7 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-from .quota_extract_service import extract_and_import_from_markdown, query_quotas
+from .quota_extract_service import extract_and_import_from_markdown, query_quotas, clean_latex_text
 import sqlite3
 import json
 from pathlib import Path
@@ -136,26 +136,36 @@ def parse_document():
 
     file_id = request.form.get('file_id')
     if file_id:
-        # 从文件管理读取已上传文件
+        # 从文件管理读取已上传文件，优先使用预转换的 markdown
         db_path = get_db_path()
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        c.execute('SELECT saved_path, original_name FROM uploaded_files WHERE id = ?', (file_id,))
+        c.execute('SELECT md_path, saved_path, original_name FROM uploaded_files WHERE id = ?', (file_id,))
         row = c.fetchone()
         conn.close()
         if not row:
             return jsonify({'ok': False, 'error': 'file not found'}), 404
-        file_path = row['saved_path']
-        filename = row['original_name'] or Path(file_path).name
-        with open(file_path, 'rb') as f:
-            file_bytes = f.read()
-    else:
-        file = request.files.get('file')
-        if not file:
-            return jsonify({'ok': False, 'error': 'no file provided'}), 400
-        filename = file.filename or 'upload.pdf'
-        file_bytes = file.read()
+
+        # 如果已有预转换的 markdown，直接返回
+        md_path = row['md_path']
+        if md_path:
+            try:
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    markdown = f.read()
+                return jsonify({'ok': True, 'markdown': markdown, 'saved': os.path.basename(md_path)})
+            except Exception as e:
+                return jsonify({'ok': False, 'error': f'读取 markdown 失败: {str(e)}'}), 500
+
+        # 未转换则返回提示
+        return jsonify({'ok': False, 'error': '文件尚未转换为 markdown，请先在文件管理页面转换'}), 400
+
+    # 没有 file_id 时的直接上传（兼容旧调用）
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'ok': False, 'error': 'no file provided'}), 400
+    filename = file.filename or 'upload.pdf'
+    file_bytes = file.read()
 
     if TOKEN == 'YOUR_MINERU_API_TOKEN':
         return jsonify({'ok': False, 'error': 'please set TOKEN in backend/app.py'}), 500
@@ -261,7 +271,7 @@ def update_quota():
         attrs = json.loads(row[0]) if row[0] else {}
 
         if measurement_dimension is not None:
-            attrs['计量维度'] = measurement_dimension
+            attrs['计量维度'] = clean_latex_text(measurement_dimension)
         if measurement_value is not None:
             attrs['计量值'] = measurement_value
         if labor_cost is not None:

@@ -181,7 +181,11 @@ const typeOptions = ref([])
 const instanceOptions = ref([])
 
 const categoryOptions = computed(() => {
-  return props.equipmentInfo.categories || []
+  const categories = props.equipmentInfo.categories || []
+  return categories.map(cat => ({
+    ...cat,
+    count: props.processes.filter(p => p.equipment_category === cat.value).length
+  }))
 })
 
 const totalCount = computed(() => props.processes.length)

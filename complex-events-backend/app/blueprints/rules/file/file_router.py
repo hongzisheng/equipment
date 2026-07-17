@@ -6,9 +6,10 @@ import datetime
 from pathlib import Path
 from flask import Blueprint, request, jsonify, send_file, make_response
 from werkzeug.utils import secure_filename
-from app.utils import get_db_path 
-# file_router.py 顶部新增
-import datetime
+from app.utils import get_db_path
+from ..extraction.parse_router import parse_single_file, build_pdf_chunks
+
+MD_FOLDER = Path(__file__).resolve().parent.parent.parent.parent.parent / 'assets' / 'mdfile'
 
 def init_file_table():
     db_path = get_db_path()  # 复用 utils 中的数据库路径
@@ -20,14 +21,22 @@ def init_file_table():
             original_name TEXT NOT NULL,
             saved_path TEXT NOT NULL,
             category TEXT NOT NULL,   -- '定额' 或 '规程'
-            upload_time TEXT NOT NULL
+            upload_time TEXT NOT NULL,
+            md_path TEXT DEFAULT ''
         )
     ''')
+    # 兼容旧表：如果 md_path 列不存在则追加
+    try:
+        cursor.execute('ALTER TABLE uploaded_files ADD COLUMN md_path TEXT DEFAULT \'\'')
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # 列已存在
     conn.commit()
     conn.close()
 
 # 在模块加载时初始化表
 init_file_table()
+MD_FOLDER.mkdir(parents=True, exist_ok=True)
 
 file_bp = Blueprint('file', __name__, url_prefix='/api')
 
@@ -114,6 +123,82 @@ def upload_file():
         'url': f"http://localhost:5000/api/pdf/{file_id}"
     })
 
+
+@file_bp.route('/files/<file_id>/convert', methods=['POST', 'OPTIONS'])
+def convert_file_to_md(file_id):
+    """将定额文件转换为 markdown（调 MinerU）"""
+    if request.method == 'OPTIONS':
+        return '', 204
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT saved_path, original_name, category, md_path FROM uploaded_files WHERE id = ?', (file_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    if row['category'] != '定额':
+        return jsonify({'success': False, 'message': '仅支持定额文件转换'}), 400
+
+    if row['md_path']:
+        return jsonify({'success': True, 'message': '文件已转换', 'converted': True})
+
+    file_path = row['saved_path']
+    if not os.path.exists(file_path):
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    original_name = row['original_name'] or Path(file_path).name
+    try:
+        with open(file_path, 'rb') as f:
+            file_bytes = f.read()
+
+        # 先检查重名冲突（避免白跑 MinerU）
+        base_name = Path(original_name).stem
+        md_filename = f"{base_name}.md"
+        md_path = MD_FOLDER / md_filename
+        overwrite = request.form.get('overwrite', 'false').lower() == 'true'
+        if md_path.exists() and not overwrite:
+            return jsonify({
+                'success': False,
+                'conflict': True,
+                'message': f'"{md_filename}" 已存在，是否重新转换？'
+            }), 409
+
+        # 调用 MinerU 解析（大 PDF 分块上传）
+        ext = os.path.splitext(original_name)[1].lower()
+        if ext == '.pdf':
+            total_pages, pdf_chunks = build_pdf_chunks(file_bytes)
+            if total_pages > 200:
+                chunks = [(f'{base_name}_part{i:03d}.pdf', c) for i, c in enumerate(pdf_chunks, start=1)]
+            else:
+                chunks = [(original_name, file_bytes)]
+        else:
+            chunks = [(original_name, file_bytes)]
+
+        markdown_parts = []
+        for chunk_name, chunk_bytes in chunks:
+            markdown_parts.append(parse_single_file(chunk_name, chunk_bytes))
+        markdown = '\n\n'.join(part.strip() for part in markdown_parts if part is not None)
+
+        md_path.write_text(markdown, encoding='utf-8')
+
+        # 更新数据库
+        conn = sqlite3.connect(get_db_path())
+        cursor = conn.cursor()
+        cursor.execute('UPDATE uploaded_files SET md_path = ? WHERE id = ?', (str(md_path), file_id))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': '转换完成', 'converted': True})
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'转换失败: {str(e)}'}), 500
+
+
 @file_bp.route('/pdf/<file_id>', methods=['GET'])
 def get_pdf(file_id):
     """根据 file_id 返回 PDF 文件流，并强制添加 CORS 头"""
@@ -142,7 +227,7 @@ def delete_file(file_id):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT saved_path FROM uploaded_files WHERE id = ?', (file_id,))
+    cursor.execute('SELECT saved_path, md_path FROM uploaded_files WHERE id = ?', (file_id,))
     row = cursor.fetchone()
 
     if not row:
@@ -150,9 +235,13 @@ def delete_file(file_id):
         return jsonify({'success': False, 'message': '文件不存在'}), 404
 
     saved_path = row['saved_path']
+    md_path = row['md_path']
     try:
         if os.path.exists(saved_path):
             os.remove(saved_path)
+        # 删除对应的 markdown 文件
+        if md_path and os.path.exists(md_path):
+            os.remove(md_path)
     except Exception as e:
         conn.close()
         return jsonify({'success': False, 'message': f'删除文件失败: {e}'}), 500
@@ -173,9 +262,9 @@ def list_files():
     cursor = conn.cursor()
 
     if category:
-        cursor.execute('SELECT id, original_name, saved_path, category, upload_time FROM uploaded_files WHERE category = ? ORDER BY upload_time DESC', (category,))
+        cursor.execute('SELECT id, original_name, saved_path, category, upload_time, md_path FROM uploaded_files WHERE category = ? ORDER BY upload_time DESC', (category,))
     else:
-        cursor.execute('SELECT id, original_name, saved_path, category, upload_time FROM uploaded_files ORDER BY upload_time DESC')
+        cursor.execute('SELECT id, original_name, saved_path, category, upload_time, md_path FROM uploaded_files ORDER BY upload_time DESC')
 
     rows = cursor.fetchall()
 
@@ -190,6 +279,12 @@ def list_files():
     conn.commit()
     conn.close()
 
-    # 返回时去掉 saved_path 避免泄露服务器路径
-    result = [{k: v for k, v in f.items() if k != 'saved_path'} for f in valid_files]
+    # 返回时去掉 saved_path 避免泄露服务器路径，添加 converted 标记
+    result = []
+    for f in valid_files:
+        item = {k: v for k, v in f.items() if k != 'saved_path'}
+        item['converted'] = bool(f.get('md_path'))
+        item.pop('md_path', None)  # 不暴露路径
+        result.append(item)
+
     return jsonify({'success': True, 'data': result})

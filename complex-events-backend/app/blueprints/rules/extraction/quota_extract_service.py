@@ -16,6 +16,44 @@ def get_db_path():
 
 warnings.filterwarnings('ignore')
 
+# ===================== LaTeX 清洗函数 =====================
+def clean_latex_text(text):
+    """清洗提取结果中的 LaTeX 标记，转为可读文本"""
+    if not isinstance(text, str):
+        return text
+
+    # 1. \mathrm{~xxx} / \text{xxx} → 提取内部文字
+    text = re.sub(r'\\mathrm\{~?([^}]+)\}', r'\1', text)
+    text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
+
+    # 2. 已知 LaTeX 命令 → Unicode
+    cmd_map = {
+        '\\\\times': '×', '\\\\sim': '~',
+        '\\\\leqslant': '≤', '\\\\geqslant': '≥',
+        '\\\\Phi': 'Φ', '\\\\gamma': 'γ', '\\\\delta': 'δ',
+        '\\\\circ': '°',
+    }
+    for cmd, unicode in cmd_map.items():
+        text = re.sub(cmd, unicode, text)
+
+    # 3. 上标 ^{数字} → Unicode 上标字符
+    sup_map = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+               '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+               '+': '⁺', '-': '⁻'}
+    text = re.sub(r'\^\{(.+?)\}', lambda m: sup_map.get(m.group(1), m.group(1)), text)
+    text = re.sub(r'\^(\d)', lambda m: sup_map.get(m.group(1), m.group(1)), text)
+
+    # 4. ^\text{xxx} → xxx
+    text = re.sub(r'\^\\text\{([^}]+)\}', r'\1', text)
+
+    # 5. 去掉剩余的 $ 符号
+    text = text.replace('$', '')
+
+    # 6. 合并多余空格
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
 # ===================== 配置项 =====================
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 OUTPUT_DIR = PROJECT_ROOT / 'assets' / 'extraction'
@@ -775,8 +813,8 @@ def parse_table(html_text, proc_name="", proc_resources=None):
         for i in range(q_count):
             quotas.append({
                 "定额编号": q_codes[i],
-                "计量维度": dim,
-                "计量值": dim_vals[i],
+                "计量维度": clean_latex_text(dim),
+                "计量值": clean_latex_text(str(dim_vals[i])),
                 "基价(元)": cost_data["基价(元)"][i],
                 "人工费(元)": cost_data["人工费(元)"][i],
                 "材料费(元)": cost_data["材料费(元)"][i],
@@ -839,7 +877,7 @@ def extract_all(hierarchy):
                             continue
 
                     entities["工序"][proc_id] = {
-                        "名称": proc["名称"],
+                        "名称": clean_latex_text(proc["名称"]),
                         "工作内容": proc["工作内容"],
                         "计量单位": proc["计量单位"]
                     }

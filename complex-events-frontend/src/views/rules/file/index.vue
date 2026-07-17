@@ -132,9 +132,25 @@
             </template>
           </el-table-column>
           <el-table-column prop="upload_time" label="上传时间" width="180" />
-          <el-table-column label="操作" width="200" align="center">
+          <el-table-column label="状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.converted" type="success" size="small">已转换</el-tag>
+              <el-tag v-else type="info" size="small">未转换</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="280" align="center">
             <template #default="{ row }">
               <el-button size="small" type="primary" text @click="openPreview(row)">预览</el-button>
+              <el-button
+                v-if="row.category === '定额' && !row.converted"
+                size="small"
+                type="warning"
+                text
+                :loading="convertingId === row.id"
+                @click="convertToMd(row.id)"
+              >
+                {{ convertingId === row.id ? '转换中...' : '转换为MD' }}
+              </el-button>
               <el-button size="small" type="danger" text @click="deleteFileFromList(row.id)">删除</el-button>
             </template>
           </el-table-column>
@@ -253,6 +269,9 @@ const showUploadDialog = ref(false)
 const selectedFileType = ref('定额')
 const isRefreshingList = ref(false)
 const isUploading = ref(false)
+
+// 转换模块
+const convertingId = ref(null)       // 正在转换的文件 ID
 
 // 预览相关
 const previewDialog = ref(false)
@@ -626,6 +645,49 @@ const deleteFileFromList = async (id) => {
       ElMessage.error('删除失败：' + err.message)
     }
   }).catch(() => {})
+}
+
+const convertToMd = async (id) => {
+  convertingId.value = id
+  try {
+    const res = await fetch(`${API_BASE}/files/${id}/convert`, { method: 'POST' })
+    const data = await res.json()
+    if (data.success) {
+      ElMessage.success('转换完成')
+      await loadFiles()
+    } else if (data.conflict) {
+      // 文件已存在，询问用户是否重新转换
+      try {
+        await ElMessageBox.confirm(
+          data.message || '该文件已转换，是否重新转换？',
+          '文件已存在',
+          { confirmButtonText: '重新转换', cancelButtonText: '取消', type: 'warning' }
+        )
+        // 用户确认重新转换
+        const formData = new FormData()
+        formData.append('overwrite', 'true')
+        const retryRes = await fetch(`${API_BASE}/files/${id}/convert`, {
+          method: 'POST',
+          body: formData
+        })
+        const retryData = await retryRes.json()
+        if (retryData.success) {
+          ElMessage.success('重新转换完成')
+          await loadFiles()
+        } else {
+          ElMessage.error(retryData.message || '重新转换失败')
+        }
+      } catch {
+        // 用户取消，不做操作
+      }
+    } else {
+      ElMessage.error(data.message || '转换失败')
+    }
+  } catch (err) {
+    ElMessage.error('转换失败：' + err.message)
+  } finally {
+    convertingId.value = null
+  }
 }
 
 // ========== 生命周期 ==========

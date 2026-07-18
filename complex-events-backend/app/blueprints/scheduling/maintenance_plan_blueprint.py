@@ -7,12 +7,15 @@
 import json
 import sqlite3
 import traceback
+from datetime import datetime
 
 from flask import jsonify, request
 
 from . import workorder_mgmt_bp
 from app.models import Result
 from app.utils import get_db_connection
+from app.core import run_scheduling, get_scheduler
+from app import core
 
 
 # ======================== 列表查询 ========================
@@ -649,35 +652,20 @@ def get_plan_schedule_plan(plan_id):
                     "message": "该计划暂无关联的调度方案",
                 })
 
-            schedule_plan_id = plan["schedule_plan_id"]
+            schedule_plan_id = int(plan["schedule_plan_id"])
 
-            # 查询该计划下所有工单的设备ID，用于匹配 schedule_tasks
+            # 按 schedule_plan_id 查询该方案的调度任务（方案隔离，不再用 equipment_id 跨方案匹配）
             c.execute(
-                "SELECT DISTINCT equipment_id FROM work_orders WHERE plan_id = ?",
-                (plan_id,),
-            )
-            equipment_ids = [row["equipment_id"] for row in c.fetchall()]
-
-            if not equipment_ids:
-                return jsonify({
-                    "success": True,
-                    "data": None,
-                    "message": "该计划下无关联工单",
-                })
-
-            # 查询调度任务
-            placeholders = ",".join("?" for _ in equipment_ids)
-            c.execute(
-                f"""
+                """
                 SELECT schedule_id, process_id, process_name, equipment_id, equipment_name,
                        equipment_type_id, equipment_type_name, equipment_category,
                        start_time, end_time, start_time_formatted, end_time_formatted,
                        duration_days, workers, predecessors
                 FROM schedule_tasks
-                WHERE equipment_id IN ({placeholders})
+                WHERE schedule_plan_id = ?
                 ORDER BY equipment_id, start_time
                 """,
-                equipment_ids,
+                (schedule_plan_id,),
             )
             rows = c.fetchall()
             schedule_tasks = []
@@ -705,3 +693,263 @@ def get_plan_schedule_plan(plan_id):
     except Exception as e:
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e), "message": "获取调度方案失败"}), 500
+
+
+# ======================== 调度方案生成与历史 ========================
+
+@workorder_mgmt_bp.route("/maintenance-plans/<int:plan_id>/run-scheduler", methods=["POST"])
+def run_scheduler_by_plan(plan_id):
+    """按检修计划生成调度方案
+
+    自动查询该计划下所有工单执行调度，并将结果作为新方案保存到
+    schedule_plans + schedule_tasks（每次生成新方案，不覆盖已有方案）。
+    """
+    try:
+        data = request.get_json() or {}
+        algorithm_name = data.get("algorithm", "topological")
+
+        # 1. 确认检修计划存在并查询关联工单
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT id, plan_name FROM maintenance_plans WHERE id = ?",
+                (plan_id,),
+            )
+            plan = c.fetchone()
+            if not plan:
+                return jsonify({"success": False, "message": "检修计划不存在"}), 404
+
+            c.execute(
+                "SELECT id FROM work_orders WHERE plan_id = ? ORDER BY id",
+                (plan_id,),
+            )
+            work_order_ids = [row["id"] for row in c.fetchall()]
+
+        if not work_order_ids:
+            return jsonify({"success": False, "message": "该检修计划下没有关联工单，无法调度"}), 400
+
+        # 2. 在 schedule_plans 注册一条新方案（占位），获取 schedule_plan_id
+        schedule_name = f"{plan['plan_name']}-方案-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """INSERT INTO schedule_plans
+                   (plan_id, schedule_name, algorithm, status, work_order_ids, created_at)
+                   VALUES (?, ?, ?, '生成中', ?, ?)""",
+                (
+                    plan_id,
+                    schedule_name,
+                    algorithm_name,
+                    json.dumps(work_order_ids),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            schedule_plan_id = c.lastrowid
+            conn.commit()
+
+        # 3. 执行调度（带 schedule_plan_id，结果按方案隔离写入 schedule_tasks）
+        core.reset_scheduler()
+        formatted_plan, statistics, success, message = run_scheduling(
+            work_order_ids, algorithm_name, schedule_plan_id=schedule_plan_id
+        )
+
+        if not success:
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute(
+                    "UPDATE schedule_plans SET status = '失败' WHERE id = ?",
+                    (schedule_plan_id,),
+                )
+                conn.commit()
+            if isinstance(message, dict) and message.get("error_type") == "insufficient_workers":
+                return jsonify({
+                    "success": False,
+                    "error_type": "insufficient_workers",
+                    "message": "工人资源不足，无法开始调度",
+                    "error_details": message.get("details", []),
+                }), 400
+            return jsonify({"success": False, "message": str(message)}), 400
+
+        # 4. 调度成功，回填方案记录（统计、任务数、状态）
+        total_tasks = len(formatted_plan) if formatted_plan else 0
+        project_start = None
+        try:
+            scheduler = get_scheduler()
+            if scheduler and scheduler.project_start_datetime:
+                project_start = scheduler.project_start_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """UPDATE schedule_plans
+                   SET status = '生效中', statistics = ?, total_tasks = ?, project_start_datetime = ?
+                   WHERE id = ?""",
+                (
+                    json.dumps(statistics, ensure_ascii=False),
+                    total_tasks,
+                    project_start,
+                    schedule_plan_id,
+                ),
+            )
+            # 5. 更新 maintenance_plans.schedule_plan_id 指向当前生效方案
+            c.execute(
+                "UPDATE maintenance_plans SET schedule_plan_id = ?, updated_at = ? WHERE id = ?",
+                (
+                    str(schedule_plan_id),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    plan_id,
+                ),
+            )
+            # 6. 将该检修计划下其他方案标记为"已归档"，只保留当前方案为"生效中"
+            c.execute(
+                "UPDATE schedule_plans SET status = '已归档' WHERE plan_id = ? AND id != ? AND status = '生效中'",
+                (plan_id, schedule_plan_id),
+            )
+            conn.commit()
+
+        # 获取工人池（前端展示用）
+        worker_pool_data = {}
+        try:
+            scheduler = get_scheduler()
+            if scheduler:
+                worker_pool_data = scheduler.get_worker_pool()
+        except Exception as e:
+            print(f"获取工人池失败: {e}")
+
+        return jsonify({
+            "success": True,
+            "schedule_plan_id": schedule_plan_id,
+            "schedule_name": schedule_name,
+            "plan_id": plan_id,
+            "plan_name": plan["plan_name"],
+            "algorithm": algorithm_name,
+            "schedule_plan": formatted_plan,
+            "statistics": statistics,
+            "worker_pool": worker_pool_data,
+            "total_tasks": total_tasks,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "按检修计划调度失败"}), 500
+
+
+@workorder_mgmt_bp.route("/maintenance-plans/<int:plan_id>/schedule-plans", methods=["GET"])
+def get_plan_schedule_plans(plan_id):
+    """获取检修计划的调度方案历史列表
+
+    返回该计划下所有生成的调度方案（按创建时间倒序）。
+    """
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+            # 确认计划存在并获取当前生效方案
+            c.execute(
+                "SELECT id, plan_name, schedule_plan_id FROM maintenance_plans WHERE id = ?",
+                (plan_id,),
+            )
+            plan = c.fetchone()
+            if not plan:
+                return jsonify({"success": False, "message": "检修计划不存在"}), 404
+
+            c.execute(
+                """SELECT id, schedule_name, algorithm, status, work_order_ids,
+                          project_start_datetime, statistics, total_tasks, created_at
+                   FROM schedule_plans
+                   WHERE plan_id = ?
+                   ORDER BY created_at DESC""",
+                (plan_id,),
+            )
+            rows = c.fetchall()
+            plans = []
+            for row in rows:
+                item = dict(row)
+                if item.get("work_order_ids"):
+                    try:
+                        item["work_order_ids"] = json.loads(item["work_order_ids"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if item.get("statistics"):
+                    try:
+                        item["statistics"] = json.loads(item["statistics"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                plans.append(item)
+
+        return jsonify({
+            "success": True,
+            "data": plans,
+            "total": len(plans),
+            "current_schedule_plan_id": plan["schedule_plan_id"],
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "获取方案历史失败"}), 500
+
+
+@workorder_mgmt_bp.route("/schedule-plans/<int:schedule_plan_id>", methods=["GET"])
+def get_schedule_plan_detail(schedule_plan_id):
+    """按调度方案ID查询方案详情（支持查看历史方案的任务列表）
+
+    与 /maintenance-plans/<plan_id>/schedule-plan 不同：
+    - 后者只返回检修计划当前生效方案
+    - 本接口按任意 schedule_plan_id 查询，可查看历史方案
+    """
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+
+            # 方案元信息
+            c.execute(
+                """SELECT id, plan_id, schedule_name, algorithm, status, work_order_ids,
+                          project_start_datetime, statistics, total_tasks, created_at
+                   FROM schedule_plans WHERE id = ?""",
+                (schedule_plan_id,),
+            )
+            plan = c.fetchone()
+            if not plan:
+                return jsonify({"success": False, "message": "调度方案不存在"}), 404
+
+            # 该方案的任务（按 schedule_plan_id 隔离查询）
+            c.execute(
+                """SELECT schedule_id, process_id, process_name, equipment_id, equipment_name,
+                          equipment_type_id, equipment_type_name, equipment_category,
+                          start_time, end_time, start_time_formatted, end_time_formatted,
+                          duration_days, workers, predecessors
+                   FROM schedule_tasks
+                   WHERE schedule_plan_id = ?
+                   ORDER BY equipment_id, start_time""",
+                (schedule_plan_id,),
+            )
+            rows = c.fetchall()
+            schedule_tasks = []
+            for row in rows:
+                task = dict(row)
+                for json_field in ["workers", "predecessors"]:
+                    if task.get(json_field):
+                        try:
+                            task[json_field] = json.loads(task[json_field])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    else:
+                        task[json_field] = {} if json_field == "workers" else []
+                schedule_tasks.append(task)
+
+            result = dict(plan)
+            if result.get("work_order_ids"):
+                try:
+                    result["work_order_ids"] = json.loads(result["work_order_ids"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if result.get("statistics"):
+                try:
+                    result["statistics"] = json.loads(result["statistics"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            result["schedule_tasks"] = schedule_tasks
+
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "获取方案详情失败"}), 500

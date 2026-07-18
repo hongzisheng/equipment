@@ -14,24 +14,53 @@
           <div class="section-title" ><img src="/src/assets/iconfont/算法选择.png" alt="算法选择" class="panel-icon mr6" />模型选择 </div>
           </div>
          
+          <!-- 调度模式切换：按工单 / 按检修计划 -->
+          <div class="schedule-mode-bar">
+            <span class="mode-label">调度模式：</span>
+            <el-radio-group v-model="scheduleMode" @change="onScheduleModeChange">
+              <el-radio value="workorder">按工单</el-radio>
+              <el-radio value="plan">按检修计划</el-radio>
+            </el-radio-group>
+          </div>
           <div class="algorithm-target-selection">
+            <!-- 按工单模式：选择工单 -->
             <el-select
-    v-model="selectedWorkOrders"
-    placeholder="请选择工单"
-    class="selection-item"
-    :loading="loadingWorkOrders"
-    multiple
-    clearable
-    @change="onWorkOrderChange"
-    style="width: 100%;"
-  >
-    <el-option
-      v-for="workOrder in workOrders"
-      :key="workOrder.id"
-      :label="`${workOrder.order_number} - ${workOrder.title} (${workOrder.equipment_name})`"
-      :value="workOrder.id"
-    />
-  </el-select>
+              v-if="scheduleMode === 'workorder'"
+              v-model="selectedWorkOrders"
+              placeholder="请选择工单"
+              class="selection-item"
+              :loading="loadingWorkOrders"
+              multiple
+              clearable
+              @change="onWorkOrderChange"
+              style="width: 100%;"
+            >
+              <el-option
+                v-for="workOrder in workOrders"
+                :key="workOrder.id"
+                :label="`${workOrder.order_number} - ${workOrder.title} (${workOrder.equipment_name})`"
+                :value="workOrder.id"
+              />
+            </el-select>
+            <!-- 按检修计划模式：选择检修计划 -->
+            <el-select
+              v-else
+              v-model="selectedPlanId"
+              placeholder="请选择检修计划"
+              class="selection-item"
+              :loading="loadingPlans"
+              clearable
+              filterable
+              @change="onPlanChange"
+              style="width: 100%;"
+            >
+              <el-option
+                v-for="plan in maintenancePlans"
+                :key="plan.id"
+                :label="`${plan.plan_name}（${plan.work_order_count || 0} 工单）`"
+                :value="plan.id"
+              />
+            </el-select>
             <el-select v-model="selectedTarget" placeholder="请选择目标" class="selection-item">
               <el-option label="最小化工期" value="minimize_duration" />
               <el-option label="最小化成本" value="minimize_cost" />
@@ -44,8 +73,16 @@
           <div class="button-group mt8">
             <el-button type="primary" class="schedule-btn" :loading="loadingSchedule"
               @click="runSchedule">生成调度</el-button>
-          
+
             <el-button type="success" @click="savePlan" :loading="saving" class="save-btn">保存方案</el-button>
+            <!-- 方案历史按钮：仅按检修计划模式且已选计划时显示 -->
+            <el-button
+              v-if="scheduleMode === 'plan' && selectedPlanId"
+              type="info"
+              @click="openPlanHistory"
+              :loading="loadingPlanHistory"
+              class="plan-history-btn"
+            >方案历史</el-button>
            <el-button
     v-if="showGanttView"
     type="warning"
@@ -230,6 +267,52 @@
         </span>
       </template>
     </el-dialog>
+    <!-- 方案历史对话框（仅按检修计划模式使用） -->
+    <el-dialog
+      v-model="planHistoryDialogVisible"
+      title="方案历史"
+      width="80%"
+      :close-on-click-modal="false"
+    >
+      <el-table
+        :data="planHistoryList"
+        v-loading="loadingPlanHistory"
+        border
+        stripe
+        style="width: 100%"
+        :row-class-name="planHistoryRowClassName"
+      >
+        <el-table-column prop="schedule_name" label="方案名" min-width="180">
+          <template #default="{ row }">
+            <span>{{ row.schedule_name }}</span>
+            <el-tag
+              v-if="currentActiveSchedulePlanId && row.id === currentActiveSchedulePlanId"
+              type="success"
+              size="small"
+              style="margin-left: 8px;"
+            >当前生效</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="algorithm" label="算法" min-width="120" />
+        <el-table-column prop="status" label="状态" min-width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'active' ? 'success' : 'info'">
+              {{ row.status === 'active' ? '生效中' : (row.status || '—') }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="total_tasks" label="任务数" min-width="80" />
+        <el-table-column prop="created_at" label="创建时间" min-width="160" />
+        <el-table-column label="操作" min-width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link @click="viewPlanSchedule(row)">查看</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="planHistoryDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
     <el-dialog
       v-model="editWorkerDialogVisible"
       title="更换工人"
@@ -295,12 +378,29 @@ const editingWorkers = ref({})
 
 const saving = ref(false)
 
+// ====== 按检修计划模式相关状态 ======
+const scheduleMode = ref('workorder')          // 调度模式：'workorder' | 'plan'
+const maintenancePlans = ref([])                // 检修计划列表
+const selectedPlanId = ref(null)                // 选中的检修计划ID
+const loadingPlans = ref(false)                 // 检修计划加载状态
+const currentSchedulePlanId = ref(null)         // 当前生成的调度方案ID
+const currentScheduleName = ref('')             // 当前生成的调度方案名
+const planHistoryDialogVisible = ref(false)     // 方案历史对话框
+const planHistoryList = ref([])                 // 方案历史列表
+const loadingPlanHistory = ref(false)           // 方案历史加载状态
+const currentActiveSchedulePlanId = ref(null)   // 当前生效方案ID（用于历史列表标记）
+
 async function savePlan() {
+  // 按检修计划模式：方案在生成调度时已自动保存为新方案，无需再保存
+  if (scheduleMode.value === 'plan') {
+    ElMessage.info('方案已随生成调度时自动保存')
+    return
+  }
   saving.value = true
   try {
     await new Promise((r) => setTimeout(r, 600))
     ElMessage.success('方案已保存')
-    
+
     // 保存完成后自动导出Excel文件
     exportAssignmentToExcel()
   } catch {
@@ -331,6 +431,221 @@ async function fetchWorkOrders() {
     loadingWorkOrders.value = false
   }
 }
+
+// ====== 按检修计划模式相关方法 ======
+
+// 获取检修计划列表
+async function fetchMaintenancePlans() {
+  loadingPlans.value = true
+  try {
+    const result = await request({
+      url: '/api/maintenance-plans',
+      method: 'get',
+      params: { page: 1, page_size: 100 }
+    })
+    if (result.success && Array.isArray(result.data)) {
+      maintenancePlans.value = result.data
+    } else {
+      maintenancePlans.value = []
+      ElMessage.warning(result.message || '获取检修计划列表失败')
+    }
+  } catch (error) {
+    console.error('获取检修计划列表失败:', error)
+    ElMessage.error('获取检修计划列表失败，请检查网络连接')
+    maintenancePlans.value = []
+  } finally {
+    loadingPlans.value = false
+  }
+}
+
+// 调度模式切换处理
+function onScheduleModeChange(val) {
+  // 切换到按检修计划模式时，若尚未加载检修计划则触发加载
+  if (val === 'plan' && maintenancePlans.value.length === 0) {
+    fetchMaintenancePlans()
+  }
+  // 切换模式时清空另一种模式的选择，避免数据混淆
+  if (val === 'workorder') {
+    selectedPlanId.value = null
+  } else {
+    selectedWorkOrders.value = []
+  }
+  // 清空当前方案信息
+  currentSchedulePlanId.value = null
+  currentScheduleName.value = ''
+}
+
+// 检修计划选择变化处理
+function onPlanChange(planId) {
+  if (planId) {
+    const plan = maintenancePlans.value.find(p => p.id === planId)
+    if (plan) {
+      ElMessage.info(`已选择检修计划: ${plan.plan_name}`)
+    }
+  }
+  // 切换计划时清空当前方案信息
+  currentSchedulePlanId.value = null
+  currentScheduleName.value = ''
+}
+
+// 打开方案历史对话框
+async function openPlanHistory() {
+  if (!selectedPlanId.value) {
+    ElMessage.warning('请先选择检修计划')
+    return
+  }
+  planHistoryDialogVisible.value = true
+  loadingPlanHistory.value = true
+  try {
+    const result = await request({
+      url: `/api/maintenance-plans/${selectedPlanId.value}/schedule-plans`,
+      method: 'get'
+    })
+    if (result.success && Array.isArray(result.data)) {
+      planHistoryList.value = result.data
+      currentActiveSchedulePlanId.value = result.current_schedule_plan_id || null
+    } else {
+      planHistoryList.value = []
+      currentActiveSchedulePlanId.value = null
+      ElMessage.warning(result.message || '获取方案历史失败')
+    }
+  } catch (error) {
+    console.error('获取方案历史失败:', error)
+    ElMessage.error('获取方案历史失败，请检查后端服务')
+    planHistoryList.value = []
+    currentActiveSchedulePlanId.value = null
+  } finally {
+    loadingPlanHistory.value = false
+  }
+}
+
+// 方案历史行样式：高亮当前生效方案
+function planHistoryRowClassName({ row }) {
+  if (currentActiveSchedulePlanId.value && row.id === currentActiveSchedulePlanId.value) {
+    return 'current-plan-row'
+  }
+  return ''
+}
+
+// 查看指定调度方案详情（支持历史方案），加载到主表格
+async function viewPlanSchedule(row) {
+  if (!row || !row.id) {
+    ElMessage.warning('方案信息缺失')
+    return
+  }
+  try {
+    const result = await request({
+      url: `/api/schedule-plans/${row.id}`,
+      method: 'get'
+    })
+    if (result.success && result.data) {
+      const data = result.data
+      const tasks = data.schedule_tasks || []
+      // 填充主表格
+      assignmentRows.value = mapSchedulePlanToRows(tasks)
+      // 记录当前方案信息
+      currentSchedulePlanId.value = data.id || null
+      if (row && row.schedule_name) {
+        currentScheduleName.value = row.schedule_name
+      }
+      // 保存到 localStorage
+      localStorage.setItem('schedule_plan', JSON.stringify(tasks))
+      // 重建甘特图
+      buildScheduleRows(tasks, projectStartDatetime.value)
+      useRealSchedule.value = true
+      showGanttView.value = false
+      await nextTick()
+      showGanttView.value = true
+      buildWorkerBusyMap(tasks)
+      ElMessage.success(`已加载方案：${row?.schedule_name || data.schedule_plan_id || ''}`)
+      // 关闭对话框
+      planHistoryDialogVisible.value = false
+    } else {
+      ElMessage.warning(result.message || '该检修计划暂无生效方案')
+    }
+  } catch (error) {
+    console.error('加载方案详情失败:', error)
+    ElMessage.error('加载方案详情失败，请检查后端服务')
+  }
+}
+
+// 公共辅助：将后端 schedule_plan 数组映射为前端 assignmentRows 结构
+function mapSchedulePlanToRows(schedulePlan) {
+  return (schedulePlan || []).map(task => {
+    const safeWorkers = task.workers && typeof task.workers === 'object' ? task.workers : {}
+    const workersArray = Object.entries(safeWorkers).map(([type, workers]) => {
+      const workersList = Array.isArray(workers) ? workers : []
+      const names = workersList.length > 0 ? workersList.join('、') : '待分配'
+      return `${type}: ${names}`
+    })
+    return {
+      task: task.process_name,
+      device: `${task.equipment_name}`,
+      processId: task.process_id,
+      equipmentId: task.equipment_id,
+      workers: safeWorkers,
+      workersText: Array.isArray(workersArray) && workersArray.length > 0 ? workersArray.join('；') : '未分配',
+      startTimeFormatted: task.start_time_formatted,
+      endTimeFormatted: task.end_time_formatted,
+      durationHours: task.duration_hours,
+      startDay: task.start_time,
+      endDay: task.end_time
+    }
+  })
+}
+
+// 按检修计划模式生成调度（生成即保存为新方案，一步完成）
+async function runScheduleByPlan() {
+  if (!selectedPlanId.value) {
+    ElMessage.warning('请先选择检修计划')
+    return
+  }
+  const result = await request({
+    url: `/api/maintenance-plans/${selectedPlanId.value}/run-scheduler`,
+    method: 'post',
+    data: {
+      algorithm: selectedAlgorithm.value
+    }
+  })
+  if (result.success) {
+    // 记录当前生成的方案信息
+    currentSchedulePlanId.value = result.schedule_plan_id || null
+    currentScheduleName.value = result.schedule_name || ''
+    // 填充调度结果到主表格
+    assignmentRows.value = mapSchedulePlanToRows(result.schedule_plan)
+    // 处理工人池
+    const workerPoolData = result.worker_pool || {}
+    const flatWorkers = []
+    for (const [trade, workers] of Object.entries(workerPoolData)) {
+      workers.forEach(worker => {
+        flatWorkers.push({ ...worker, type: trade })
+      })
+    }
+    workerPool.value = flatWorkers
+    // 保存到 localStorage
+    localStorage.setItem('schedule_plan', JSON.stringify(result.schedule_plan || []))
+    // 构建甘特图数据
+    buildScheduleRows(result.schedule_plan || [], projectStartDatetime.value)
+    useRealSchedule.value = true
+    showGanttView.value = false
+    await nextTick()
+    showGanttView.value = true
+    buildWorkerBusyMap(result.schedule_plan || [])
+    // 处理统计信息
+    if (result.statistics) {
+      statisticsData.value = result.statistics
+    }
+    ElMessage.success(`调度方案已生成并保存：${result.schedule_name || ''}`)
+  } else {
+    // 失败处理：区分工人不足与其他错误
+    if (result.error_type === 'insufficient_workers') {
+      ElMessage.error('工人不足，无法生成调度方案')
+    } else {
+      ElMessage.error(result.message || '调度执行失败')
+    }
+  }
+}
+
 const filteredAssignmentData = computed(() => {
   let data = assignmentRows.value || []
 
@@ -1010,6 +1325,12 @@ function syncSchedulePlanToStorage() {
 async function runSchedule() {
   loadingSchedule.value = true
   try {
+    // 按检修计划模式：调用专用流程，生成即保存为新方案
+    if (scheduleMode.value === 'plan') {
+      await runScheduleByPlan()
+      return
+    }
+    // 按工单模式：保持原有逻辑不变
     if (selectedWorkOrders.value.length === 0) {
       ElMessage.warning('请先选择至少一个工单')
       return
@@ -3142,6 +3463,50 @@ onMounted(() => {
 .selection-item {
   flex: 1; /* 三个下拉框等宽 */
   min-width: 0;
+}
+
+/* 调度模式切换栏 */
+.schedule-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.schedule-mode-bar .mode-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* 方案历史按钮样式 */
+.plan-history-btn {
+  background: #909399 !important;
+  border: 1px solid #909399 !important;
+  color: white !important;
+  font-weight: 500;
+  border-radius: 8px;
+}
+
+.plan-history-btn:hover {
+  background: #a6a9ad !important;
+  border-color: #a6a9ad !important;
+  color: white !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(144, 147, 153, 0.3);
+}
+
+/* 方案历史中当前生效方案行高亮 */
+:deep(.el-table .current-plan-row) {
+  background-color: #f0f9eb !important;
+}
+
+:deep(.el-table .current-plan-row:hover > td) {
+  background-color: #e1f3d8 !important;
 }
 
 .iconfont {

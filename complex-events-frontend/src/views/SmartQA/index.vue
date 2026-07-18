@@ -15,7 +15,7 @@
             class="action-btn block-btn"
           >
             <el-icon><Delete /></el-icon>
-            删除
+            删除对话
           </el-button>
         </div>
       </div>
@@ -204,6 +204,25 @@ function generateSessionTitle(messagesList) {
   return '新对话'
 }
 
+// AI 生成对话标题（首次问答后调用，异步不阻塞主流程）
+const aiTitlePendingSessions = new Set()
+
+async function generateAITitle(message, reply) {
+  try {
+    const response = await fetch(`${apiBase}/api/chat/title`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, reply }),
+    })
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    const data = await response.json()
+    return data.success && data.title ? data.title : null
+  } catch (error) {
+    console.warn('生成AI标题失败:', error)
+    return null
+  }
+}
+
 function createSession(messagesList = []) {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -239,7 +258,10 @@ function updateCurrentSession() {
   const session = chatSessions.value.find((s) => s.id === activeSessionId.value)
   if (!session) return
   session.updatedAt = new Date().toISOString()
-  session.title = generateSessionTitle(session.messages)
+  // AI 标题生成中不覆盖；标题已生成（非"新对话"）也不覆盖，保持首个话题作为会话标题
+  if ((!session.title || session.title === '新对话') && !aiTitlePendingSessions.has(session.id)) {
+    session.title = generateSessionTitle(session.messages)
+  }
   persistChatSessions()
 }
 
@@ -477,6 +499,20 @@ const sendQuestion = async () => {
       messages.value[idx].htmlContent = renderMarkdown(data.reply)
       messages.value[idx].isThinking = false
       typeWriterEffect(messages.value[idx], idx)
+
+      // 首次问答完成后，异步生成 AI 标题（不阻塞主流程，仅首次触发）
+      const curSession = chatSessions.value.find((s) => s.id === activeSessionId.value)
+      if (curSession && curSession.title === '新对话' && !aiTitlePendingSessions.has(curSession.id)) {
+        aiTitlePendingSessions.add(curSession.id)
+        generateAITitle(question, data.reply).then((aiTitle) => {
+          aiTitlePendingSessions.delete(curSession.id)
+          const target = chatSessions.value.find((s) => s.id === curSession.id)
+          if (target) {
+            target.title = aiTitle || generateSessionTitle(target.messages)
+            persistChatSessions()
+          }
+        })
+      }
     } else {
       throw new Error(data.error || '获取AI回复失败')
     }
@@ -588,7 +624,12 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.sidebar-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 .block-btn {
+  display: flex;
   width: 100%;
   justify-content: flex-start;
 }

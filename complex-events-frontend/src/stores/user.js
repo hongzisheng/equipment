@@ -60,7 +60,7 @@ export const useUserStore = defineStore(
     // get user info
     function getInfo() {
       return new Promise((resolve, reject) => {
-        getInfoApi(token.value)
+        getInfoApi()
           .then((response) => {
             const { data } = response
 
@@ -83,10 +83,9 @@ export const useUserStore = defineStore(
     // user logout
     function logout() {
       return new Promise((resolve, reject) => {
-        logoutApi(token.value)
+        logoutApi()
           .then(() => {
             removeToken() // must remove token first
-            resetRouter()
             resetState()
             resolve()
           })

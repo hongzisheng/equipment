@@ -56,7 +56,7 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/worker/account',
     name: '工人管理',
-    meta: { title: '工人管理' },
+    meta: { title: '工人管理', icon: 'worker' },
     children: [
       {
         path: '/worker/account',
@@ -71,7 +71,7 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/equipment/account',
     name: '设备管理',
-    meta: { title: '设备管理' },
+    meta: { title: '设备管理', icon: 'equipment' },
     children: [
       {
         path: '/equipment/account',
@@ -86,7 +86,7 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/tools/account',
     name: '维修机具管理',
-    meta: { title: '维修机具管理' },
+    meta: { title: '维修机具管理', icon: 'tools' },
     children: [
       {
         path: '/tools/account',
@@ -101,7 +101,7 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/materials/account',
     name: '辅助材料管理',
-    meta: { title: '辅助材料管理' },
+    meta: { title: '辅助材料管理', icon: 'material' },
     children: [
       {
         path: '/materials/account',
@@ -116,7 +116,7 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/rules/library',
     name: '规则管理',
-    meta: { title: '规则管理' },
+    meta: { title: '规则管理', icon: 'rule' },
     children: [
       {
         path: '/rules/library',
@@ -155,31 +155,31 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/dispatch/worker',
     name: '调度数据管理',
-    meta: { title: '调度数据管理' },
+    meta: { title: '调度数据管理', icon: 'dispatch' },
     children: [
       {
         path: '/dispatch/worker',
         name: '工人',
         component: () => import('@/views/scheduling/worker/index.vue'),
-        meta: { title: '工人' },
+        meta: { title: '工人', icon: 'user' },
       },
       {
         path: '/dispatch/equipment',
         name: '设备',
         component: () => import('@/views/scheduling/equipment/index.vue'),
-        meta: { title: '设备' },
+        meta: { title: '设备', icon: 'equipment' },
       },
       {
         path: '/dispatch/order',
         name: '工单',
         component: () => import('@/views/scheduling/order/index.vue'),
-        meta: { title: '工单' },
+        meta: { title: '工单', icon: 'list' },
       },
       {
         path: '/dispatch/generate',
         name: '调度生成',
         component: () => import('@/views/scheduling/schedule/index.vue'),
-        meta: { title: '调度生成' },
+        meta: { title: '调度生成', icon: 'calendar' },
       },
     ],
   },
@@ -224,19 +224,19 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/admin/flow',
     name: '后台管理',
-    meta: { title: '后台管理' },
+    meta: { title: '后台管理', icon: 'admin' },
     children: [
       {
         path: '/admin/flow',
         name: '流程确认',
         component: () => import('@/views/ProcessConfirmation/index.vue'),
-        meta: { title: '流程确认' },
+        meta: { title: '流程确认', icon: 'checked' },
       },
       {
         path: '/admin/dashboard',
         name: '信息面板',
         component: () => import('@/views/InfoPanel/index.vue'),
-        meta: { title: '信息面板' },
+        meta: { title: '信息面板', icon: 'data-analysis' },
       },
     ],
   },
@@ -245,13 +245,13 @@ export const constantRoutes: RouteItem[] = [
     component: () => import('@/layout/index.vue'),
     redirect: '/assistant/qa',
     name: 'AI助手',
-    meta: { title: 'AI助手' },
+    meta: { title: 'AI助手', icon: 'assistant' },
     children: [
       {
         path: '/assistant/qa',
         name: '智能问答',
         component: () => import('@/views/SmartQA/index.vue'),
-        meta: { title: '智能问答' },
+        meta: { title: '智能问答', icon: 'chat-dot-round' },
       },
     ],
   },

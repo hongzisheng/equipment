@@ -48,7 +48,12 @@
         </el-radio-group>
       </el-form-item>
 
-      <el-button :loading="loading" type="primary" style="width:100%;margin-bottom:30px;" @click="handleLogin">登 录</el-button>
+      <el-button :loading="loading" type="primary" style="width:100%;margin-bottom:16px;" @click="handleLogin">登 录</el-button>
+
+      <div class="register-link">
+        没有账号？
+        <router-link to="/register">去注册</router-link>
+      </div>
 
     </el-form>
   </div>
@@ -406,6 +411,32 @@ $focus_blue: #6c9dff;
 
 .role-selector :deep(.el-radio-button__inner:not(:first-child)::before) {
   display: none;
+}
+
+.register-link {
+  text-align: center;
+  font-size: 14px;
+  color: #8892a0;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 4px;
+
+  a {
+    color: $focus_blue;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 2px 10px;
+    margin-left: 2px;
+    border-radius: 6px;
+    background: rgba(108, 157, 255, 0.08);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &:hover {
+      background: rgba(108, 157, 255, 0.18);
+      color: #8ab4ff;
+      box-shadow: 0 0 16px rgba(108, 157, 255, 0.15);
+    }
+  }
 }
 
 @keyframes slideIn {

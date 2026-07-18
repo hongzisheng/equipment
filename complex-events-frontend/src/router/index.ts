@@ -29,6 +29,11 @@ export const constantRoutes: RouteItem[] = [
     hidden: true,
   },
   {
+    path: '/register',
+    component: () => import('@/views/register/index.vue'),
+    hidden: true,
+  },
+  {
     path: '/404',
     component: EmptyPage,
     hidden: true,
@@ -275,7 +280,7 @@ const router = createRouter({
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login']
+const whiteList = ['/login', '/register']
 
 router.beforeEach(async (to, from, next) => {
   NProgress.start()

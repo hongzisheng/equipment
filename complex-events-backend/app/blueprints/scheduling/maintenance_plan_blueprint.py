@@ -164,7 +164,6 @@ def create_maintenance_plan():
         planned_end_time = data.get("planned_end_time")
         actual_start_time = data.get("actual_start_time")
         actual_end_time = data.get("actual_end_time")
-        planned_cost = data.get("planned_cost", 0)
         actual_cost = data.get("actual_cost", 0)
         work_order_ids = data.get("work_order_ids", [])
 
@@ -174,11 +173,12 @@ def create_maintenance_plan():
         with get_db_connection() as conn:
             c = conn.cursor()
 
-            # 计算关联工单的总人工时和计划时间范围
+            # 计算关联工单的总人工时、计划时间范围、计划成本
             planned_man_hours = 0
             actual_man_hours = 0
             auto_planned_start_time = None
             auto_planned_end_time = None
+            planned_cost = 0
             if work_order_ids:
                 placeholders = ",".join("?" for _ in work_order_ids)
                 c.execute(
@@ -204,6 +204,31 @@ def create_maintenance_plan():
                 time_range = c.fetchone()
                 auto_planned_start_time = time_range[0]
                 auto_planned_end_time = time_range[1]
+
+                # 方案A：按工单汇总，每个工单取其工序组对应的 M01 主工序价格
+                # （通过 equipment_type_id 关联父工序，避免子工序重复计算）
+                c.execute(
+                    f"""
+                    SELECT COALESCE(SUM(
+                        COALESCE((
+                            SELECT SUM(COALESCE(mpt.material_price, 0) + COALESCE(mpt.tools_price, 0))
+                            FROM process_templates mpt
+                            WHERE mpt.is_major_process = 1
+                              AND mpt.equipment_type_id IN (
+                                  SELECT DISTINCT pt2.equipment_type_id
+                                  FROM work_order_tasks t2
+                                  LEFT JOIN process_templates pt2 ON CAST(pt2.id AS TEXT) = t2.process_id
+                                  WHERE t2.work_order_id = wo.id
+                                    AND pt2.equipment_type_id IS NOT NULL
+                              )
+                        ), 0)
+                    ), 0)
+                    FROM work_orders wo
+                    WHERE wo.id IN ({placeholders})
+                    """,
+                    work_order_ids,
+                )
+                planned_cost = round(c.fetchone()[0], 2)
 
             planned_start_time = auto_planned_start_time or planned_start_time
             planned_end_time = auto_planned_end_time or planned_end_time
@@ -310,7 +335,7 @@ def update_maintenance_plan(plan_id):
                         """,
                         [plan_id] + work_order_ids,
                     )
-                # 重新计算人工时和计划时间范围
+                # 重新计算人工时、计划时间范围和计划成本
                 c.execute(
                     f"""
                     SELECT SUM(t.estimated_hours)
@@ -333,16 +358,43 @@ def update_maintenance_plan(plan_id):
                 auto_planned_start_time = time_range[0]
                 auto_planned_end_time = time_range[1]
 
+                # 方案A：按工单汇总，每个工单取其工序组对应的 M01 主工序价格
+                # （通过 equipment_type_id 关联父工序，避免子工序重复计算）
+                c.execute(
+                    f"""
+                    SELECT COALESCE(SUM(
+                        COALESCE((
+                            SELECT SUM(COALESCE(mpt.material_price, 0) + COALESCE(mpt.tools_price, 0))
+                            FROM process_templates mpt
+                            WHERE mpt.is_major_process = 1
+                              AND mpt.equipment_type_id IN (
+                                  SELECT DISTINCT pt2.equipment_type_id
+                                  FROM work_order_tasks t2
+                                  LEFT JOIN process_templates pt2 ON CAST(pt2.id AS TEXT) = t2.process_id
+                                  WHERE t2.work_order_id = wo.id
+                                    AND pt2.equipment_type_id IS NOT NULL
+                              )
+                        ), 0)
+                    ), 0)
+                    FROM work_orders wo
+                    WHERE wo.id IN ({placeholders})
+                    """,
+                    work_order_ids if work_order_ids else [0],
+                )
+                planned_cost_total = round(c.fetchone()[0], 2)
+
                 c.execute(
                     """
                     UPDATE maintenance_plans
-                    SET planned_man_hours = ?, planned_start_time = ?, planned_end_time = ?
+                    SET planned_man_hours = ?, planned_start_time = ?, planned_end_time = ?,
+                        planned_cost = ?
                     WHERE id = ?
                     """,
                     (
                         round(total, 1) if total else 0,
                         auto_planned_start_time,
                         auto_planned_end_time,
+                        planned_cost_total,
                         plan_id,
                     ),
                 )
@@ -407,11 +459,25 @@ def get_unplanned_work_orders():
                     SELECT wo.id, wo.order_number, wo.title, wo.equipment_id, wo.equipment_name,
                            wo.status, wo.priority, wo.created_at, wo.plan_id,
                            wo.scheduled_start_time, wo.scheduled_end_time,
-                           COALESCE(SUM(t.estimated_hours), 0) as estimated_hours
+                           COALESCE((
+                               SELECT SUM(t.estimated_hours)
+                               FROM work_order_tasks t
+                               WHERE t.work_order_id = wo.id
+                           ), 0) as estimated_hours,
+                           COALESCE((
+                               SELECT SUM(COALESCE(mpt.material_price, 0) + COALESCE(mpt.tools_price, 0))
+                               FROM process_templates mpt
+                               WHERE mpt.is_major_process = 1
+                                 AND mpt.equipment_type_id IN (
+                                     SELECT DISTINCT pt2.equipment_type_id
+                                     FROM work_order_tasks t2
+                                     LEFT JOIN process_templates pt2 ON CAST(pt2.id AS TEXT) = t2.process_id
+                                     WHERE t2.work_order_id = wo.id
+                                       AND pt2.equipment_type_id IS NOT NULL
+                                 )
+                           ), 0) as estimated_cost
                     FROM work_orders wo
-                    LEFT JOIN work_order_tasks t ON t.work_order_id = wo.id
                     WHERE wo.plan_id IS NULL OR wo.plan_id = ?
-                    GROUP BY wo.id
                     ORDER BY wo.plan_id DESC, wo.created_at DESC
                     """,
                     (plan_id,),
@@ -422,11 +488,25 @@ def get_unplanned_work_orders():
                     SELECT wo.id, wo.order_number, wo.title, wo.equipment_id, wo.equipment_name,
                            wo.status, wo.priority, wo.created_at, NULL as plan_id,
                            wo.scheduled_start_time, wo.scheduled_end_time,
-                           COALESCE(SUM(t.estimated_hours), 0) as estimated_hours
+                           COALESCE((
+                               SELECT SUM(t.estimated_hours)
+                               FROM work_order_tasks t
+                               WHERE t.work_order_id = wo.id
+                           ), 0) as estimated_hours,
+                           COALESCE((
+                               SELECT SUM(COALESCE(mpt.material_price, 0) + COALESCE(mpt.tools_price, 0))
+                               FROM process_templates mpt
+                               WHERE mpt.is_major_process = 1
+                                 AND mpt.equipment_type_id IN (
+                                     SELECT DISTINCT pt2.equipment_type_id
+                                     FROM work_order_tasks t2
+                                     LEFT JOIN process_templates pt2 ON CAST(pt2.id AS TEXT) = t2.process_id
+                                     WHERE t2.work_order_id = wo.id
+                                       AND pt2.equipment_type_id IS NOT NULL
+                                 )
+                           ), 0) as estimated_cost
                     FROM work_orders wo
-                    LEFT JOIN work_order_tasks t ON t.work_order_id = wo.id
                     WHERE wo.plan_id IS NULL
-                    GROUP BY wo.id
                     ORDER BY wo.created_at DESC
                     """
                 )

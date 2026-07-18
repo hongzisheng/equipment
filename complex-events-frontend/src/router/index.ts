@@ -184,6 +184,42 @@ export const constantRoutes: RouteItem[] = [
     ],
   },
   {
+    path: '/maintenance-plan',
+    component: () => import('@/layout/index.vue'),
+    redirect: '/maintenance-plan/list',
+    name: '检修计划管理',
+    meta: { title: '检修计划管理' },
+    children: [
+      {
+        path: '/maintenance-plan/list',
+        name: '检修计划列表',
+        component: () => import('@/views/maintenance-plan/index.vue'),
+        meta: { title: '检修计划列表' },
+      },
+      {
+        path: '/maintenance-plan/create',
+        name: '新建检修计划',
+        component: () => import('@/views/maintenance-plan/CreateOrEdit.vue'),
+        meta: { title: '新建检修计划' },
+        hidden: true,
+      },
+      {
+        path: '/maintenance-plan/edit/:id',
+        name: '编辑检修计划',
+        component: () => import('@/views/maintenance-plan/CreateOrEdit.vue'),
+        meta: { title: '编辑检修计划' },
+        hidden: true,
+      },
+      {
+        path: '/maintenance-plan/detail/:id',
+        name: '检修计划详情',
+        component: () => import('@/views/maintenance-plan/Detail.vue'),
+        meta: { title: '检修计划详情' },
+        hidden: true,
+      },
+    ],
+  },
+  {
     path: '/admin',
     component: () => import('@/layout/index.vue'),
     redirect: '/admin/flow',

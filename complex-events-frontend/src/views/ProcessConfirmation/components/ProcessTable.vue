@@ -65,7 +65,7 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="180" fixed="right" align="center">
+      <el-table-column label="操作" width="160" fixed="right" align="center">
         <template #default="{ row }">
           <div class="action-buttons">
             <el-button
@@ -77,22 +77,13 @@
               <el-icon><View /></el-icon> 详情
             </el-button>
             <el-button
-              v-if="row.status === 'on_hold' || row.status === 'rejected'"
-              type="success"
+              v-if="row.status !== 'completed' && row.status !== 'cancelled'"
+              type="warning"
               size="small"
               plain
-              @click.stop="$emit('confirm', row)"
+              @click.stop="$emit('cancel', row)"
             >
-              <el-icon><Checked /></el-icon> 确认
-            </el-button>
-            <el-button
-              v-if="row.status !== 'rejected' && row.status !== 'completed' && row.status !== 'confirmed'"
-              type="danger"
-              size="small"
-              plain
-              @click.stop="$emit('reject', row)"
-            >
-              <el-icon><Close /></el-icon> 驳回
+              <el-icon><CircleClose /></el-icon> 取消
             </el-button>
           </div>
         </template>
@@ -102,7 +93,7 @@
 </template>
 
 <script setup>
-import { Monitor, View, Checked, Close } from '@element-plus/icons-vue'
+import { Monitor, View, CircleClose } from '@element-plus/icons-vue'
 import ProcessStatusTag from './ProcessStatusTag.vue'
 import { formatTime, formatWorkers, getRowClassName, getCellStyle } from '../utils'
 
@@ -113,7 +104,7 @@ defineProps({
   }
 })
 
-const emit = defineEmits(['view-detail', 'confirm', 'reject'])
+const emit = defineEmits(['view-detail', 'cancel'])
 
 function handleRowClick(event, row) {
   emit('view-detail', row)
@@ -144,6 +135,14 @@ function handleRowClick(event, row) {
   --el-table-tr-bg-color: #fff3e0;
 }
 
+:deep(.el-table .status-submitted-row) {
+  --el-table-tr-bg-color: #e8f5e9;
+}
+
+:deep(.el-table .status-cancelled-row) {
+  --el-table-tr-bg-color: #fce4ec;
+}
+
 :deep(.el-table .status-pending-row) {
   --el-table-tr-bg-color: #fafafa;
 }
@@ -169,8 +168,16 @@ function handleRowClick(event, row) {
   --el-table-tr-bg-color: #ffe0b2 !important;
 }
 
+:deep(.el-table .status-submitted-row:hover) {
+  --el-table-tr-bg-color: #c8e6c9 !important;
+}
+
 :deep(.el-table .status-pending-row:hover) {
   --el-table-tr-bg-color: #eeeeee !important;
+}
+
+:deep(.el-table .status-cancelled-row:hover) {
+  --el-table-tr-bg-color: #f8bbd0 !important;
 }
 
 .equipment-info {

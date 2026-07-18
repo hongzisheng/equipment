@@ -105,7 +105,11 @@
       <div class="list-header">
         <h2 class="list-title">文件管理</h2>
         <div class="filter-toolbar">
-          <el-select v-model="selectedCategory" placeholder="选择分类" @change="handleFilterChange" style="width: 200px">
+          <el-button type="warning" plain :loading="isScanningDisk" @click="scanDiskFiles">
+            <el-icon style="margin-right: 4px"><Refresh /></el-icon>
+            {{ isScanningDisk ? '扫描中...' : '刷新磁盘' }}
+          </el-button>
+          <el-select v-model="selectedCategory" placeholder="选择分类" @change="handleFilterChange" style="width: 200px; margin-left: 12px;">
             <el-option label="全部" value="" />
             <el-option label="定额" value="定额" />
             <el-option label="规程" value="规程" />
@@ -171,7 +175,7 @@
     </div>
 
     <!-- 预览对话框（保持不变） -->
-    <el-dialog v-model="previewDialog" :title="previewTitle || '文件预览'" width="80%" :before-close="closePreview" top="8vh">
+    <el-dialog v-model="previewDialog" :title="previewTitle || '文件预览'" width="65%" :before-close="closePreview" top="5vh">
       <div class="preview-dialog-body">
         <div class="pdf-toolbar">
           <div class="toolbar-left">
@@ -248,7 +252,8 @@ import {
   ZoomIn,
   FullScreen,
   Loading,
-  Search
+  Search,
+  Refresh
 } from '@element-plus/icons-vue'
 import * as pdfjsLib from 'pdfjs-dist'
 
@@ -268,6 +273,7 @@ const pendingUploadFiles = ref([])   // 待上传文件列表
 const showUploadDialog = ref(false)
 const selectedFileType = ref('定额')
 const isRefreshingList = ref(false)
+const isScanningDisk = ref(false)
 const isUploading = ref(false)
 
 // 转换模块
@@ -333,6 +339,25 @@ function formatUploadTime(timeStr) {
 }
 
 // ========== 加载文件列表 ==========
+const scanDiskFiles = async () => {
+  isScanningDisk.value = true
+  try {
+    const res = await fetch(`${API_BASE}/files/scan-disk`, { method: 'POST' })
+    const data = await res.json()
+    if (data.success) {
+      ElMessage.success(data.message)
+      // 刷新文件列表
+      await loadFiles()
+    } else {
+      ElMessage.error(data.message || '扫描失败')
+    }
+  } catch (err) {
+    ElMessage.error('扫描磁盘失败：' + err.message)
+  } finally {
+    isScanningDisk.value = false
+  }
+}
+
 const loadFiles = async () => {
   const url = `${API_BASE}/files`
   try {
@@ -527,7 +552,6 @@ async function loadPreviewPdf(fileId) {
 async function renderPreviewPage(pageNumber) {
   if (!pdfDoc) return
   const page = await pdfDoc.getPage(pageNumber)
-  const viewport = page.getViewport({ scale: scale.value })
   let canvas = document.getElementById('preview-pdf-canvas')
   const container = document.querySelector('.pdf-view .pdf-scroll')
   if (!canvas && container) {
@@ -538,9 +562,22 @@ async function renderPreviewPage(pageNumber) {
     container.appendChild(canvas)
   }
   if (!canvas) return
+
+  // 根据容器宽度自动缩放，防止画布溢出
+  const containerWidth = container?.clientWidth || 800
+  const baseViewport = page.getViewport({ scale: 1 })
+  let renderScale = scale.value
+  const maxRenderWidth = containerWidth * 0.95
+  if (baseViewport.width * renderScale > maxRenderWidth) {
+    renderScale = maxRenderWidth / baseViewport.width
+  }
+
+  const viewport = page.getViewport({ scale: renderScale })
   const context = canvas.getContext('2d')
   canvas.width = viewport.width
   canvas.height = viewport.height
+  // 重置拖拽偏移
+  canvas.style.transform = ''
   context.clearRect(0, 0, canvas.width, canvas.height)
   await page.render({ canvasContext: context, viewport }).promise
 }
@@ -929,6 +966,227 @@ onUnmounted(() => {
 .hidden-input {
   display: none;
 }
+/* ========== PDF 预览对话框 ========== */
+:deep(.el-dialog:has(.preview-dialog-body)) {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  margin-top: 8vh !important;
+}
+
+:deep(.el-dialog:has(.preview-dialog-body)) .el-dialog__header {
+  padding: 16px 24px;
+  margin: 0;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafbfc;
+}
+
+:deep(.el-dialog:has(.preview-dialog-body)) .el-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 22px;
+}
+
+:deep(.el-dialog:has(.preview-dialog-body)) .el-dialog__headerbtn {
+  top: 16px;
+  right: 16px;
+}
+
+:deep(.el-dialog:has(.preview-dialog-body)) .el-dialog__body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.preview-dialog-body {
+  display: flex;
+  flex-direction: column;
+  height: 75vh;
+  min-height: 500px;
+  overflow: hidden;
+}
+
+/* ========== 工具栏 ========== */
+.pdf-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #fafbfc;
+  border-bottom: 1px solid #e8eaed;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.toolbar-left, .toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-left .el-button,
+.toolbar-right .el-button {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.toolbar-left .el-button:not(:disabled):hover,
+.toolbar-right .el-button:not(:disabled):hover {
+  background: #e8f0fe;
+  color: #1a73e8;
+  border-color: #c2d7fb;
+}
+
+.toolbar-left .el-button:not(:disabled):active,
+.toolbar-right .el-button:not(:disabled):active {
+  background: #d2e3fc;
+}
+
+.toolbar-left .el-button:disabled,
+.toolbar-right .el-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-info {
+  font-size: 13px;
+  color: #5f6368;
+  user-select: none;
+}
+
+.toolbar-left .el-input {
+  width: 56px;
+}
+
+.toolbar-left .el-input :deep(.el-input__wrapper) {
+  border-radius: 6px;
+  height: 32px;
+  line-height: 32px;
+  padding: 0 8px;
+  box-shadow: 0 0 0 1px #dadce0 inset;
+  transition: box-shadow 0.2s ease;
+}
+
+.toolbar-left .el-input :deep(.el-input__wrapper):focus-within {
+  box-shadow: 0 0 0 2px #1a73e8 inset;
+}
+
+.toolbar-left .el-input :deep(.el-input__inner) {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ========== PDF 画布区域 ========== */
+.pdf-view {
+  flex: 1;
+  min-height: 0;
+  background: #e9ecef;
+  background-image:
+    linear-gradient(45deg, #e2e4e8 25%, transparent 25%),
+    linear-gradient(-45deg, #e2e4e8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e2e4e8 75%),
+    linear-gradient(-45deg, transparent 75%, #e2e4e8 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.pdf-scroll {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  cursor: grab;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.pdf-scroll.drag-cursor {
+  cursor: grabbing;
+}
+
+.pdf-canvas {
+  display: block;
+  max-width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18), 0 1px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  background: white;
+  flex-shrink: 0;
+}
+
+/* ========== 加载中状态 ========== */
+.loading-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  gap: 16px;
+  color: #5f6368;
+}
+
+.loading-preview .el-icon {
+  font-size: 36px;
+  color: #1a73e8;
+  animation: rotateLoading 1.2s linear infinite;
+}
+
+@keyframes rotateLoading {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.loading-preview span {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* ========== 空状态 ========== */
+.empty-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  color: #9aa0a6;
+  text-align: center;
+  gap: 4px;
+}
+
+.doc-icon {
+  font-size: 52px;
+  color: #bdc1c6;
+  margin-bottom: 8px;
+}
+
+.empty-text {
+  font-size: 15px;
+  font-weight: 500;
+  color: #5f6368;
+}
+
+.support-text-sm {
+  font-size: 12px;
+  color: #9aa0a6;
+  margin-top: 2px;
+}
+
+/* ========== 旧版样式保留（用于其他可能引用） ========== */
 .preview-section {
   flex: 1;
   min-height: 0;
@@ -948,83 +1206,6 @@ onUnmounted(() => {
   font-weight: 600;
   margin: 0 0 8px 0;
   color: #1f2937;
-}
-.pdf-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px;
-  background: #f5f7fa;
-  border-radius: 6px 6px 0 0;
-  border: 1px solid #ebeef5;
-  border-bottom: none;
-}
-.toolbar-left, .toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.page-info {
-  font-size: 12px;
-  color: #606266;
-}
-.pdf-view {
-  flex: 1;
-  min-height: 800px;
-  background: #555a64;
-  border: 1px solid #ebeef5;
-  border-top: none;
-  border-bottom: none;
-  overflow: hidden;
-}
-.pdf-scroll {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  position: relative;
-  cursor: grab;
-}
-.pdf-scroll.drag-cursor {
-  cursor: grabbing;
-}
-.pdf-canvas {
-  display: block;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform-origin: center center;
-}
-.empty-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 240px;
-  color: #b0b3b8;
-  text-align: center;
-}
-.loading-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 240px;
-  gap: 8px;
-  color: white;
-}
-.doc-icon {
-  font-size: 56px;
-  margin-bottom: 10px;
-}
-.empty-text {
-  font-size: 15px;
-}
-.support-text-sm {
-  font-size: 12px;
-  color: #94a3b8;
-  margin-top: 4px;
 }
 .pdf-footer {
   padding: 6px 8px;

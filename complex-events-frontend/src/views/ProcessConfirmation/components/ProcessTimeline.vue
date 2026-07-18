@@ -9,6 +9,7 @@
           'current-node': node.id === currentProcessId,
           'completed-node': node.status === 'completed',
           'rejected-node': node.status === 'rejected',
+          'cancelled-node': node.status === 'cancelled',
         }"
         @click="$emit('view-node', node)"
       >
@@ -120,6 +121,11 @@ const sortedProcesses = computed(() => {
   background: #fff5f5;
 }
 
+.timeline-mini-item.cancelled-node {
+  background: #fce4ec;
+  opacity: 0.7;
+}
+
 .mini-left {
   position: relative;
   width: 30px;
@@ -160,13 +166,37 @@ const sortedProcesses = computed(() => {
   background: #2c8e5c;
 }
 
+.dot-cancelled {
+  background: #e53935;
+}
+
 .dot-current,
 .dot-in_progress {
   background: #1f7a9c;
 }
 
+.dot-released {
+  background: #99aab9;
+}
+
 .dot-pending {
   background: #99aab9;
+}
+
+.dot-pending_engineer,
+.dot-pending_construction,
+.dot-pending_team,
+.dot-pending_process_close,
+.dot-pending_equipment_close {
+  background: #8e99ad;
+}
+
+.dot-pending_sign {
+  background: #f59e0b;
+}
+
+.dot-submitted {
+  background: #43a047;
 }
 
 .dot-rejected {

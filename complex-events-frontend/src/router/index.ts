@@ -45,7 +45,7 @@ export const constantRoutes: RouteItem[] = [
     children: [
       {
         path: '',
-        component: EmptyPage,
+        component: () => import('@/views/worker/account/index.vue'),
         meta: { title: '首页' },
       },
     ],

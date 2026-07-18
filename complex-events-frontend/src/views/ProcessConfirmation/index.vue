@@ -7,7 +7,7 @@
           流程确认
         </div>
         <div class="header-actions">
-          <el-button type="primary" size="small" @click="handleBatchConfirm" :disabled="!hasOnHoldProcesses">
+          <el-button type="primary" size="small" @click="handleBatchConfirm" :disabled="!hasPendingProcesses">
             <el-icon><Checked /></el-icon> 批量确认
           </el-button>
         </div>
@@ -22,8 +22,7 @@
       <ProcessTable
         :processes="filteredProcesses"
         @view-detail="openProcessDetail"
-        @confirm="handleConfirm"
-        @reject="handleReject"
+        @cancel="handleCancel"
       />
 
       <ProcessDetail
@@ -46,7 +45,7 @@ import { Checked } from '@element-plus/icons-vue'
 import ProcessFilter from './components/ProcessFilter.vue'
 import ProcessTable from './components/ProcessTable.vue'
 import ProcessDetail from './components/ProcessDetail.vue'
-import { getProcessList, getEquipmentInfo, updateProcess } from '@/api/processApi'
+import { getProcessList, getEquipmentInfo, updateProcess, cancelProcess } from '@/api/processApi'
 import { parseTimeToMinutes } from './utils'
 
 const processes = ref([])
@@ -84,8 +83,8 @@ const fetchEquipmentInfo = async () => {
   }
 }
 
-const hasOnHoldProcesses = computed(() => {
-  return processes.value.some(p => p.status === 'on_hold')
+const hasPendingProcesses = computed(() => {
+  return processes.value.some(p => p.status !== 'completed' && p.status !== 'cancelled')
 })
 
 const filteredProcesses = computed(() => {
@@ -130,73 +129,71 @@ function viewProcessNode(node) {
   currentProcess.value = node
 }
 
-function handleConfirm(process) {
+function handleCancel(process) {
   ElMessageBox.confirm(
-    `确认完成「${process.process_name}」？`,
-    '确认操作',
+    `确定取消「${process.process_name}」？取消后不可恢复。`,
+    '取消操作',
     {
-      confirmButtonText: '确认',
-      cancelButtonText: '取消',
-      type: 'info',
+      confirmButtonText: '确定取消',
+      cancelButtonText: '返回',
+      type: 'warning',
       center: true,
       size: 'small'
     }
   ).then(() => {
-    updateProcessStatus(process.id, 'confirmed', '')
-    ElMessage.success(`"${process.process_name}" 已确认`)
-  }).catch(() => {})
-}
-
-function handleReject(process) {
-  const rejectAction = process.status === 'rejected' ? '再次驳回' : '驳回'
-
-  ElMessageBox.prompt('请输入驳回原因', `${rejectAction} - ${process.process_name}`, {
-    confirmButtonText: `确定${rejectAction}`,
-    cancelButtonText: '取消',
-    type: 'warning',
-    inputPlaceholder: '请填写驳回原因（必填）',
-    inputType: 'textarea',
-    inputPattern: /\S+/,
-    inputErrorMessage: '驳回原因不能为空'
-  }).then(({ value }) => {
-    updateProcessStatus(process.id, 'rejected', value)
-    ElMessage.warning(`已${rejectAction} "${process.process_name}"，原因：${value}`)
+    cancelProcessStatus(process.id)
   }).catch(() => {})
 }
 
 function handleDialogConfirm({ process, comment }) {
-  updateProcessStatus(process.id, 'confirmed', comment)
+  confirmProcessStatus(process.id, 'confirm', comment)
   closeDetailDialog()
 }
 
 function handleDialogReject({ process, reason }) {
-  updateProcessStatus(process.id, 'rejected', reason)
+  confirmProcessStatus(process.id, 'reject', reason)
   closeDetailDialog()
 }
 
-const updateProcessStatus = async (processId, newStatus, comments = '') => {
+const confirmProcessStatus = async (processId, action, comments = '') => {
   try {
     await updateProcess({
       id: processId,
-      status: newStatus,
+      action: action,
       approval_comments: comments
     })
     await fetchProcesses()
+    ElMessage.success(action === 'confirm' ? '已确认，进入下一状态' : '已驳回，退回上一状态')
   } catch (error) {
     console.error('更新状态失败:', error)
   }
 }
 
-function handleBatchConfirm() {
-  const onHoldNodes = processes.value.filter(p => p.status === 'on_hold')
+const cancelProcessStatus = async (processId) => {
+  try {
+    await cancelProcess({
+      id: processId,
+      approval_comments: '管理员取消'
+    })
+    await fetchProcesses()
+    ElMessage.warning('流程已取消')
+  } catch (error) {
+    console.error('取消失败:', error)
+  }
+}
 
-  if (onHoldNodes.length === 0) {
+function handleBatchConfirm() {
+  const pendingNodes = processes.value.filter(
+    p => p.status !== 'completed' && p.status !== 'cancelled'
+  )
+
+  if (pendingNodes.length === 0) {
     ElMessage.warning('无可确认的待审批任务')
     return
   }
 
   ElMessageBox.confirm(
-    `确认 ${onHoldNodes.length} 个待审批任务？`,
+    `确认 ${pendingNodes.length} 个待审批任务？将全部推进到下一状态。`,
     '批量确认',
     {
       confirmButtonText: '确认',
@@ -206,10 +203,10 @@ function handleBatchConfirm() {
       size: 'small'
     }
   ).then(() => {
-    onHoldNodes.forEach(node => {
-      updateProcessStatus(node.id, 'confirmed', '批量确认')
+    pendingNodes.forEach(node => {
+      confirmProcessStatus(node.id, 'confirm', '批量确认')
     })
-    ElMessage.success(`已确认 ${onHoldNodes.length} 个任务`)
+    ElMessage.success(`已确认 ${pendingNodes.length} 个任务`)
   }).catch(() => {})
 }
 

@@ -4,7 +4,7 @@
       <div class="page-header">
         <div class="title-block">
           <div class="page-title">知识结构树</div>
-          <div class="page-subtitle">基于设备分类的知识体系结构，默认展示至“设备名称”层级，点击可展开工序</div>
+          <div class="page-subtitle">基于设备分类的知识体系结构，默认展示根节点与一级分类，点击分类展开下级设备</div>
         </div>
         <div class="header-tools">
           <el-button-group class="view-switch">
@@ -39,7 +39,8 @@
           <span class="legend-item"><i class="dot dot-orange"></i>设备名称</span>
         </div>
         <div class="legend-actions">
-          <div class="zoom-tools">
+          <!-- 缩放工具栏：仅在树形视图下显示 -->
+          <div class="zoom-tools" v-if="viewMode === 'tree'">
             <el-button circle :disabled="zoomPercent <= zoomMin" @click="zoomOut">
               <el-icon><Minus /></el-icon>
             </el-button>
@@ -47,16 +48,19 @@
             <el-button circle :disabled="zoomPercent >= zoomMax" @click="zoomIn">
               <el-icon><Plus /></el-icon>
             </el-button>
-            <el-button circle @click="resetZoom">
+            <el-button circle @click="resetZoom" title="重置缩放">
               <el-icon><RefreshRight /></el-icon>
             </el-button>
-            <el-button circle @click="fitToView">
+            <el-button circle @click="fitToView" title="适配画布">
               <el-icon><FullScreen /></el-icon>
             </el-button>
-            <el-button circle @click="centerOnRootNode" title="居中根节点">
-              <el-icon><Aim /></el-icon>
-            </el-button>
           </div>
+
+          <!-- 定位根节点按钮：仅树形视图有效 -->
+          <el-button circle @click="centerOnRootNode" title="定位根节点">
+            <el-icon><Aim /></el-icon>
+          </el-button>
+
           <el-button link type="primary" @click="expandAll">
             <el-icon><Plus /></el-icon> 展开全部
           </el-button>
@@ -69,13 +73,14 @@
       <div class="tree-stage">
         <div
           class="tree-stage-inner"
+          :class="{ 'list-mode': viewMode === 'list' }"
           ref="treeStageRef"
           v-loading="loading"
           @mousedown="handleDragStart"
           @mousemove="handleDragMove"
           @mouseup="handleDragEnd"
           @mouseleave="handleDragEnd"
-          @wheel.prevent="handleWheel"
+          @wheel="handleWheel"
         >
           <div v-if="!loading && categoryNodes.length === 0" class="empty-state">
             <el-empty v-if="!backendConnected" description="后端服务未连接">
@@ -88,14 +93,15 @@
             </el-empty>
             <el-empty v-else description="暂无设备分类数据" />
           </div>
-          <div v-else class="tree-canvas" ref="treeCanvasRef">
+
+          <!-- 树形 SVG 视图 -->
+          <div v-else-if="viewMode === 'tree'" class="tree-canvas" ref="treeCanvasRef">
             <svg
               :width="svgWidth"
               :height="svgHeight"
               :viewBox="`${-viewX} ${-viewY} ${svgWidth / zoomScaleValue} ${svgHeight / zoomScaleValue}`"
             >
               <g>
-                <!-- 连线 -->
                 <path
                   v-for="link in computedLinks"
                   :key="link.key"
@@ -105,7 +111,6 @@
                   stroke-width="2.5"
                   :class="{ 'no-transition': disableTransitions }"
                 />
-                <!-- 节点组 -->
                 <g
                   v-for="node in layoutNodes"
                   :key="node.id"
@@ -113,6 +118,7 @@
                   :class="['node-group', { 'no-transition': disableTransitions }]"
                   @click.stop="handleNodeClick(node)"
                 >
+                  <title>{{ node.label }}</title>
                   <rect
                     :x="-nodeWidth / 2"
                     :y="-nodeHeight / 2"
@@ -132,9 +138,8 @@
                     fill="#1f2937"
                     style="pointer-events:none"
                   >
-                    {{ node.label }}
+                    {{ truncateLabel(node.label, 7) }}
                   </text>
-                  <!-- 子节点计数徽标 -->
                   <template v-if="hasVisibleChildren(node)">
                     <circle
                       :cx="nodeWidth / 2 - 6"
@@ -160,6 +165,29 @@
               </g>
             </svg>
           </div>
+
+          <!-- 列表视图 -->
+          <div v-else class="list-view-container" ref="listContainerRef">
+            <el-tree
+              ref="treeRef"
+              :data="listData"
+              :props="{ label: 'label', children: 'children' }"
+              node-key="id"
+              :default-expanded-keys="['root']"
+              highlight-current
+              expand-on-click-node
+            >
+              <template #default="{ node, data }">
+                <span class="list-node">
+                  <span class="list-node-label">{{ data.label }}</span>
+                  <span class="list-node-count" v-if="data.children && data.children.length">
+                    （{{ data.children.length }} 个子节点）
+                  </span>
+                  <span class="list-node-depth">层级 {{ data.depth }}</span>
+                </span>
+              </template>
+            </el-tree>
+          </div>
         </div>
       </div>
 
@@ -184,8 +212,6 @@ import {
 import * as d3 from 'd3'
 import request from '@/utils/request'
 
-const RIGHT_SHIFT = 500 // 整体右移 150 个单位（可根据需要调整）
-
 const CACHE_KEY = 'knowledge_tree_cache'
 const CACHE_EXPIRE_HOURS = 24
 
@@ -209,12 +235,240 @@ const initTreeLayout = () => {
     .separation((a, b) => a.parent === b.parent ? 1.2 : 1.5)
 }
 
-// 用 shallowRef 存储布局结果，避免深层代理
 const layoutNodes = shallowRef([])
 const computedLinks = shallowRef([])
 const disableTransitions = ref(false)
 
-// 构建 D3 层次结构并应用折叠
+// 列表视图数据（带虚拟根节点）
+const listData = computed(() => {
+  if (!categoryNodes.value.length) return []
+  return [{
+    id: 'root',
+    label: '设备',
+    depth: 0,
+    children: categoryNodes.value
+  }]
+})
+
+const treeRef = ref(null)
+const listContainerRef = ref(null)
+
+// ---------- 工具函数 ----------
+function truncateLabel(label, maxLen = 7) {
+  if (!label) return ''
+  return label.length > maxLen ? label.slice(0, maxLen) + '...' : label
+}
+
+// ---------- 数据构建函数 ----------
+const buildRelationMaps = (relations) => {
+  const equipmentToChapters = new Map()
+  const chapterToProcesses = new Map()
+  const chapterToSections = new Map()
+  const sectionToProcesses = new Map()
+  const entityNames = new Map()
+  if (!relations?.length) return { equipmentToChapters, chapterToProcesses, chapterToSections, sectionToProcesses, entityNames }
+
+  const normalizeEntityName = (entityId) => {
+    if (!entityId) return ''
+    const matched = entityId.match(/^[^_]+_(.+)$/)
+    return matched ? matched[1] : entityId
+  }
+
+  relations.forEach(rel => {
+    if (!rel) return
+    if (rel.source_name) entityNames.set(rel.source_id, rel.source_name)
+    if (rel.target_name) entityNames.set(rel.target_id, rel.target_name)
+
+    const sourceName = rel.source_name || normalizeEntityName(rel.source_id)
+    const targetName = rel.target_name || normalizeEntityName(rel.target_id)
+
+    if (rel.source_type === '册名' && rel.target_type === '章节' && rel.relation_type === '包含章节') {
+      if (!equipmentToChapters.has(sourceName)) equipmentToChapters.set(sourceName, [])
+      equipmentToChapters.get(sourceName).push({ id: rel.target_id, name: targetName || `设备名称${rel.target_id}` })
+    }
+    if (rel.source_type === '章节' && rel.target_type === '工序' && rel.relation_type === '包含工序') {
+      if (!chapterToProcesses.has(rel.source_id)) chapterToProcesses.set(rel.source_id, [])
+      chapterToProcesses.get(rel.source_id).push({ id: rel.target_id, name: targetName || `工序${rel.target_id}` })
+    }
+    if (rel.source_type === '章节' && rel.target_type === '节' && rel.relation_type === '包含节') {
+      if (!chapterToSections.has(rel.source_id)) chapterToSections.set(rel.source_id, [])
+      chapterToSections.get(rel.source_id).push({ id: rel.target_id, name: targetName || `节${rel.target_id}` })
+    }
+    if (rel.source_type === '节' && rel.target_type === '工序' && rel.relation_type === '包含工序') {
+      if (!sectionToProcesses.has(rel.source_id)) sectionToProcesses.set(rel.source_id, [])
+      sectionToProcesses.get(rel.source_id).push({ id: rel.target_id, name: targetName || `工序${rel.target_id}` })
+    }
+  })
+
+  return { equipmentToChapters, chapterToProcesses, chapterToSections, sectionToProcesses, entityNames }
+}
+
+const buildTree = (categories, types, relations) => {
+  const {
+    equipmentToChapters,
+    chapterToProcesses,
+    chapterToSections,
+    sectionToProcesses,
+    entityNames
+  } = buildRelationMaps(relations)
+
+  const removedCategoryNames = ['静设备', '知识结构', '静置设备']
+  const categoryList = (categories || [])
+    .filter(cat => !removedCategoryNames.includes(cat.name))
+    .map(cat => ({
+      id: cat.id,
+      label: cat.name,
+      depth: 1,
+      children: []
+    }))
+
+  const categoryIndex = new Map(categoryList.map(item => [item.label, item]))
+  const typesByCategory = new Map()
+  ;(types || []).forEach(type => {
+    if (!type) return
+    const catName = type.category || '未分类'
+    if (!removedCategoryNames.includes(catName)) {
+      if (!typesByCategory.has(catName)) typesByCategory.set(catName, [])
+      typesByCategory.get(catName).push(type)
+    }
+  })
+
+  typesByCategory.forEach((value, catName) => {
+    if (!categoryIndex.has(catName)) {
+      const extra = { id: `extra-${catName}`, label: catName, depth: 1, children: [] }
+      categoryIndex.set(catName, extra)
+      categoryList.push(extra)
+    }
+  })
+
+  const buildChapterNodes = (chapterEntries, baseDepth) => {
+    return chapterEntries.map(chapter => {
+      const processMap = new Map()
+      const directProcesses = chapterToProcesses.get(chapter.id) || []
+      directProcesses.forEach(proc => processMap.set(proc.id, proc))
+
+      const sectionEntries = chapterToSections.get(chapter.id) || []
+      sectionEntries.forEach(section => {
+        const sectionProcesses = sectionToProcesses.get(section.id) || []
+        sectionProcesses.forEach(proc => processMap.set(proc.id, proc))
+      })
+
+      const processNodes = Array.from(processMap.values()).map(proc => ({
+        id: String(proc.id),
+        label: proc.name,
+        depth: baseDepth + 1,
+        children: []
+      }))
+
+      return {
+        id: chapter.id,
+        label: chapter.name || entityNames.get(chapter.id) || `设备名称${chapter.id}`,
+        depth: baseDepth,
+        children: processNodes
+      }
+    })
+  }
+
+  categoryList.forEach(cat => {
+    const typeList = typesByCategory.get(cat.label) || []
+    cat.children = typeList.map((type, idx) => {
+      if (!type) return null
+      const eqName = type.name || type.id || String(idx)
+      const chapterEntries = equipmentToChapters.get(eqName) || []
+      const chapterNodes = buildChapterNodes(chapterEntries, 3)
+      return {
+        id: String(type.id || idx),
+        label: type.name,
+        depth: 2,
+        children: chapterNodes
+      }
+    }).filter(Boolean)
+  })
+
+  let staticSettledNode = null
+  if (Array.isArray(types)) {
+    const targetType = types.find(t =>
+      t && t.category === '静置设备' && t.name === '静置设备'
+    )
+    if (targetType) {
+      const chapterEntries = equipmentToChapters.get(targetType.name) || []
+      const chapterNodes = buildChapterNodes(chapterEntries, 2)
+      staticSettledNode = {
+        id: String(targetType.id),
+        label: targetType.name,
+        depth: 1,
+        children: chapterNodes
+      }
+    }
+  }
+
+  if (!staticSettledNode && equipmentToChapters.has('静置设备')) {
+    const chapterEntries = equipmentToChapters.get('静置设备') || []
+    const chapterNodes = buildChapterNodes(chapterEntries, 2)
+    staticSettledNode = {
+      id: 'relation-static-settled-equipment',
+      label: '静置设备',
+      depth: 1,
+      children: chapterNodes
+    }
+  }
+
+  if (staticSettledNode) {
+    categoryList.push(staticSettledNode)
+  }
+
+  const allEquipmentNames = new Set(
+    categoryList.flatMap(cat => {
+      if (cat.label === '静置设备') {
+        return ['静置设备']
+      }
+      return (cat.children || []).map(n => n.label)
+    })
+  )
+
+  const extraNodes = []
+  equipmentToChapters.forEach((chapterEntries, sourceName) => {
+    if (!allEquipmentNames.has(sourceName) &&
+      sourceName !== '静置设备' &&
+      !['轴流式通风机', '特种过滤器', '管壳式换热器', '结晶器'].includes(sourceName)) {
+      const node = {
+        id: `relation-${sourceName}`,
+        label: sourceName,
+        depth: 2,
+        children: buildChapterNodes(chapterEntries, 3)
+      }
+      extraNodes.push(node)
+    }
+  })
+
+  if (extraNodes.length) {
+    const otherCategory = {
+      id: 'other-equipment',
+      label: '其他设备',
+      depth: 1,
+      children: extraNodes
+    }
+    categoryList.push(otherCategory)
+  }
+
+  categoryNodes.value = categoryList.filter(cat => cat.children?.length || cat.label === '静置设备')
+
+  // 默认折叠：折叠一级分类及以下，仅显示根节点（树形视图）
+  const defaultCollapsed = new Set()
+  const collectNodesByDepth = (nodes, minDepth) => {
+    nodes.forEach(n => {
+      if (n.depth >= minDepth) defaultCollapsed.add(n.id)
+      if (n.children) collectNodesByDepth(n.children, minDepth)
+    })
+  }
+  categoryNodes.value.forEach(cat => {
+    defaultCollapsed.add(cat.id)
+    collectNodesByDepth(cat.children || [], 2)
+  })
+  collapsedNodeIds.value = defaultCollapsed
+}
+
+// ---------- D3 布局 ----------
 const buildD3Hierarchy = () => {
   if (!categoryNodes.value.length) return null
   const rawData = {
@@ -234,10 +488,7 @@ const buildD3Hierarchy = () => {
   return root
 }
 
-// 核心布局更新函数（放入 RAF 避免阻塞）
 let layoutRAF = null
-// 原来：无参数
-// 修改后：接受可选回调 onComplete，在布局完成且 DOM 更新后调用
 const updateLayout = (onComplete) => {
   if (layoutRAF) cancelAnimationFrame(layoutRAF)
   layoutRAF = requestAnimationFrame(() => {
@@ -269,10 +520,9 @@ const updateLayout = (onComplete) => {
     if (nodes.length) {
       const minX = d3.min(nodes, d => d.x)
       const maxX = d3.max(nodes, d => d.x)
-      svgHeight.value = Math.max(600, maxX - minX + nodeHeight + 100)
+      svgHeight.value = Math.max(800, maxX - minX + nodeHeight + 100)
     }
 
-    // 在 Vue 完成响应式更新后执行回调
     if (onComplete) {
       nextTick(() => {
         onComplete()
@@ -281,31 +531,36 @@ const updateLayout = (onComplete) => {
   })
 }
 
-// 折叠状态变化时触发布局更新
 watch(collapsedNodeIds, () => updateLayout(), { deep: false })
 watch(categoryNodes, () => updateLayout(), { deep: false })
 
-// 节点样式方法（设备节点保持紫色不变）
+// 节点数据就绪后自动居中根节点
+watch(layoutNodes, (nodes) => {
+  if (nodes.length > 0 && treeStageRef.value) {
+    nextTick(() => centerOnRootNode())
+  }
+})
+
+// ---------- 节点样式 ----------
 function nodeBgColor(node) {
   if (!node) return '#ffffff'
-  if (node.depth === 0) return '#eef2ff' // 根节点保持不变
-  if (node.depth === 1) return '#e9f9ef' // 第一层：设备分类-绿色背景
-  if (node.depth === 2) return '#f3e8ff' // 第二层：设备-紫色背景（保持不变）
-  if (node.depth === 3) return '#fff7ed' // 第三层：设备名称-橙色背景
-  if (node.depth >= 4) return '#ffedd5' // 第四层及以上：检修工序-深橙色背景
+  if (node.depth === 0) return '#eef2ff'
+  if (node.depth === 1) return '#e9f9ef'
+  if (node.depth === 2) return '#f3e8ff'
+  if (node.depth === 3) return '#fff7ed'
+  if (node.depth >= 4) return '#ffedd5'
   return '#ffedd5'
 }
 function nodeStrokeColor(node) {
   if (!node) return '#cbd5e1'
-  if (node.depth === 0) return '#3b82f6' // 根节点保持不变
-  if (node.depth === 1) return '#22c55e' // 第一层：设备分类-绿色边框
-  if (node.depth === 2) return '#a855f7' // 第二层：设备-紫色边框（保持不变）
-  if (node.depth === 3) return '#f59e0b' // 第三层：设备名称-橙色边框
-  if (node.depth >= 4) return '#ea580c' // 第四层及以上：检修工序-深橙色边框
+  if (node.depth === 0) return '#3b82f6'
+  if (node.depth === 1) return '#22c55e'
+  if (node.depth === 2) return '#a855f7'
+  if (node.depth === 3) return '#f59e0b'
+  if (node.depth >= 4) return '#ea580c'
   return '#ea580c'
 }
 
-// 判断节点是否有可见子节点（用于徽标显示）
 function hasVisibleChildren(node) {
   return (node.children?.length || node._children?.length) > 0
 }
@@ -326,10 +581,43 @@ function handleNodeClick(node) {
   collapsedNodeIds.value = newSet
 }
 
+// ---------- 展开/收起 ----------
 function expandAll() {
+  if (viewMode.value === 'list') {
+    const tree = treeRef.value
+    if (tree) {
+      const rootNode = tree.store.root
+      const expandNode = (node) => {
+        if (node.childNodes && node.childNodes.length) {
+          node.expanded = true
+          node.childNodes.forEach(child => expandNode(child))
+        }
+      }
+      rootNode.expanded = true
+      rootNode.childNodes.forEach(child => expandNode(child))
+    }
+    return
+  }
   collapsedNodeIds.value = new Set()
 }
+
 function collapseAll() {
+  if (viewMode.value === 'list') {
+    const tree = treeRef.value
+    if (tree) {
+      const rootNode = tree.store.root
+      const collapseNode = (node) => {
+        if (node.childNodes && node.childNodes.length) {
+          node.childNodes.forEach(child => collapseNode(child))
+          if (node !== rootNode) {
+            node.expanded = false
+          }
+        }
+      }
+      rootNode.childNodes.forEach(child => collapseNode(child))
+    }
+    return
+  }
   const ids = new Set()
   function collect(n) {
     if (n.children?.length || n._children?.length) {
@@ -343,7 +631,7 @@ function collapseAll() {
   collapsedNodeIds.value = ids
 }
 
-// 统计信息（不变）
+// ---------- 统计 ----------
 const summary = computed(() => {
   try {
     const categories = categoryNodes.value.length
@@ -362,10 +650,10 @@ const summary = computed(() => {
   }
 })
 
-// 拖拽/缩放相关（加入防抖）
+// ---------- 拖拽/缩放 ----------
 const treeStageRef = ref(null)
 const svgWidth = ref(800)
-const svgHeight = ref(600)
+const svgHeight = ref(800)
 const viewX = ref(0)
 const viewY = ref(0)
 const isDragging = ref(false)
@@ -424,7 +712,9 @@ onUnmounted(() => {
   if (layoutRAF) cancelAnimationFrame(layoutRAF)
 })
 
+// 拖拽与滚轮（列表视图禁用）
 const handleDragStart = (e) => {
+  if (viewMode.value === 'list') return
   if (e.target.closest('.node-group, .zoom-tools, .legend-row, .page-header')) return
   isDragging.value = true
   dragStart.x = e.clientX
@@ -436,6 +726,7 @@ const handleDragStart = (e) => {
 
 let dragTimer = null
 const handleDragMove = (e) => {
+  if (viewMode.value === 'list') return
   if (!isDragging.value) return
   if (dragTimer) cancelAnimationFrame(dragTimer)
   dragTimer = requestAnimationFrame(() => {
@@ -447,12 +738,14 @@ const handleDragMove = (e) => {
 }
 
 const handleDragEnd = () => {
+  if (viewMode.value === 'list') return
   isDragging.value = false
   if (dragTimer) cancelAnimationFrame(dragTimer)
 }
 
 let wheelTimer = null
 const handleWheel = (e) => {
+  if (viewMode.value === 'list') return // 列表视图允许滚动
   e.preventDefault()
   if (wheelTimer) cancelAnimationFrame(wheelTimer)
   wheelTimer = requestAnimationFrame(() => {
@@ -471,6 +764,7 @@ const handleWheel = (e) => {
 }
 
 function zoomIn() {
+  if (viewMode.value === 'list') return
   if (zoomPercent.value < zoomMax) {
     const centerX = svgWidth.value / 2 / zoomScaleValue.value + viewX.value
     const centerY = svgHeight.value / 2 / zoomScaleValue.value + viewY.value
@@ -481,6 +775,7 @@ function zoomIn() {
 }
 
 function zoomOut() {
+  if (viewMode.value === 'list') return
   if (zoomPercent.value > zoomMin) {
     const centerX = svgWidth.value / 2 / zoomScaleValue.value + viewX.value
     const centerY = svgHeight.value / 2 / zoomScaleValue.value + viewY.value
@@ -491,37 +786,71 @@ function zoomOut() {
 }
 
 function resetZoom() {
+  if (viewMode.value === 'list') return
   zoomPercent.value = 100
   centerOnRootNode()
 }
 
-function centerOnRootNode() {
-  const nodes = layoutNodes.value
-  if (!nodes.length) return
-  const root = nodes[0]
-  // 原本居中公式：root.y - svgWidth / 2 / zoomScale
-  // 整体右移：再减去 RIGHT_SHIFT
-  viewX.value = root.y - svgWidth.value / 2 / zoomScaleValue.value - RIGHT_SHIFT
-  viewY.value = root.x - svgHeight.value / 2 / zoomScaleValue.value
-}
-
 function fitToView() {
+  if (viewMode.value === 'list') return
+
   const nodes = layoutNodes.value
   if (!nodes.length) return
-  const minX = d3.min(nodes, d => d.x) - nodeHeight
-  const maxX = d3.max(nodes, d => d.x) + nodeHeight
-  const minY = d3.min(nodes, d => d.y) - nodeWidth
-  const maxY = d3.max(nodes, d => d.y) + nodeWidth
+
+  // 计算所有节点的边界（含内边距）
+  const padding = 30
+  const minX = d3.min(nodes, d => d.x) - nodeHeight / 2 - padding
+  const maxX = d3.max(nodes, d => d.x) + nodeHeight / 2 + padding
+  const minY = d3.min(nodes, d => d.y) - nodeWidth / 2 - padding
+  const maxY = d3.max(nodes, d => d.y) + nodeWidth / 2 + padding
+
   const contentWidth = maxY - minY
   const contentHeight = maxX - minX
+
+  // 计算合适的缩放比例（使内容完整可见）
   const scaleX = svgWidth.value / contentWidth
   const scaleY = svgHeight.value / contentHeight
-  const scale = Math.min(scaleX, scaleY, 1)
+  let scale = Math.min(scaleX, scaleY, 1) // 最大 100%
+
+  // 限制缩放范围（min 20%, max 200%）
+  const minScale = zoomMin / 100
+  const maxScale = zoomMax / 100
+  scale = Math.max(minScale, Math.min(maxScale, scale))
+
+  // 更新缩放百分比
   zoomPercent.value = Math.round(scale * 100)
-  viewX.value = minY - (svgWidth.value / scale - contentWidth) / 2
-  viewY.value = minX - (svgHeight.value / scale - contentHeight) / 2
+
+  // 获取根节点（深度为0）
+  const rootNode = nodes.find(n => n.depth === 0) || nodes[0]
+  if (!rootNode) return
+
+  // 适配画布后根节点从左边 180px 位置显示
+  viewX.value = 180 / scale - rootNode.y
+  viewY.value = (svgHeight.value / 2) / scale - rootNode.x - 80
 }
 
+// ---------- 定位根节点（无偏移，精确居中） ----------
+function centerOnRootNode() {
+  if (viewMode.value === 'list') {
+    // 列表视图：选中根节点并滚动到顶部
+    treeRef.value?.setCurrentKey('root')
+    listContainerRef.value?.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
+
+  const rootNode = layoutNodes.value.find(n => n.depth === 0) || layoutNodes.value[0]
+  if (!rootNode || !treeStageRef.value) return
+
+  // 确保尺寸最新
+  svgWidth.value = treeStageRef.value.clientWidth
+  svgHeight.value = treeStageRef.value.clientHeight
+
+  const scale = zoomScaleValue.value || 1
+  viewX.value = 180 / scale - rootNode.y
+  viewY.value = (svgHeight.value / 2) / scale - rootNode.x - 80
+}
+
+// ---------- 导出 ----------
 function exportStructure() {
   try {
     const data = { summary: summary.value, data: categoryNodes.value, exportTime: new Date().toISOString() }
@@ -540,234 +869,7 @@ function exportStructure() {
   }
 }
 
-// ---------- 数据构建（设备名称第三层、工序第四层） ----------
-const buildRelationMaps = (relations) => {
-  const equipmentToChapters = new Map()
-  const chapterToProcesses = new Map()
-  const chapterToSections = new Map()
-  const sectionToProcesses = new Map()
-  const entityNames = new Map()
-  if (!relations?.length) return { equipmentToChapters, chapterToProcesses, chapterToSections, sectionToProcesses, entityNames }
-
-  const normalizeEntityName = (entityId) => {
-    if (!entityId) return ''
-    const matched = entityId.match(/^[^_]+_(.+)$/)
-    return matched ? matched[1] : entityId
-  }
-
-  relations.forEach(rel => {
-    if (!rel) return
-    if (rel.source_name) entityNames.set(rel.source_id, rel.source_name)
-    if (rel.target_name) entityNames.set(rel.target_id, rel.target_name)
-
-    const sourceName = rel.source_name || normalizeEntityName(rel.source_id)
-    const targetName = rel.target_name || normalizeEntityName(rel.target_id)
-
-    if (rel.source_type === '册名' && rel.target_type === '章节' && rel.relation_type === '包含章节') {
-      if (!equipmentToChapters.has(sourceName)) equipmentToChapters.set(sourceName, [])
-      equipmentToChapters.get(sourceName).push({ id: rel.target_id, name: targetName || `设备名称${rel.target_id}` })
-    }
-    if (rel.source_type === '章节' && rel.target_type === '工序' && rel.relation_type === '包含工序') {
-      if (!chapterToProcesses.has(rel.source_id)) chapterToProcesses.set(rel.source_id, [])
-      chapterToProcesses.get(rel.source_id).push({ id: rel.target_id, name: targetName || `工序${rel.target_id}` })
-    }
-    if (rel.source_type === '章节' && rel.target_type === '节' && rel.relation_type === '包含节') {
-      if (!chapterToSections.has(rel.source_id)) chapterToSections.set(rel.source_id, [])
-      chapterToSections.get(rel.source_id).push({ id: rel.target_id, name: targetName || `节${rel.target_id}` })
-    }
-    if (rel.source_type === '节' && rel.target_type === '工序' && rel.relation_type === '包含工序') {
-      if (!sectionToProcesses.has(rel.source_id)) sectionToProcesses.set(rel.source_id, [])
-      sectionToProcesses.get(rel.source_id).push({ id: rel.target_id, name: targetName || `工序${rel.target_id}` })
-    }
-  })
-
-  return { equipmentToChapters, chapterToProcesses, chapterToSections, sectionToProcesses, entityNames }
-}
-
-const buildTree = (categories, types, relations) => {
-  const {
-    equipmentToChapters,
-    chapterToProcesses,
-    chapterToSections,
-    sectionToProcesses,
-    entityNames
-  } = buildRelationMaps(relations)
-
-  // ===== 1. 保留所有分类，只去掉"静设备"、"知识结构"和"静置设备"分类 =====
-  const removedCategoryNames = ['静设备', '知识结构', '静置设备']
-
-  const categoryList = (categories || [])
-    .filter(cat => !removedCategoryNames.includes(cat.name))
-    .map(cat => ({
-      id: cat.id,
-      label: cat.name,
-      depth: 1,
-      children: []
-    }))
-
-  const categoryIndex = new Map(categoryList.map(item => [item.label, item]))
-
-  // ===== 2. 按分类汇总 types（只处理非静置设备的分类） =====
-  const typesByCategory = new Map()
-  ;(types || []).forEach(type => {
-    if (!type) return
-    const catName = type.category || '未分类'
-    // 只处理不在移除列表中的分类
-    if (!removedCategoryNames.includes(catName)) {
-      if (!typesByCategory.has(catName)) typesByCategory.set(catName, [])
-      typesByCategory.get(catName).push(type)
-    }
-  })
-
-  // 补充 types 中出现的其他合法分类
-  typesByCategory.forEach((value, catName) => {
-    if (!categoryIndex.has(catName)) {
-      const extra = { id: `extra-${catName}`, label: catName, depth: 1, children: [] }
-      categoryIndex.set(catName, extra)
-      categoryList.push(extra)
-    }
-  })
-
-  // ===== 3. 设备名称/工序子树构建（不变） =====
-  const buildChapterNodes = (chapterEntries, baseDepth) => {
-    return chapterEntries.map(chapter => {
-      const processMap = new Map()
-      const directProcesses = chapterToProcesses.get(chapter.id) || []
-      directProcesses.forEach(proc => processMap.set(proc.id, proc))
-
-      const sectionEntries = chapterToSections.get(chapter.id) || []
-      sectionEntries.forEach(section => {
-        const sectionProcesses = sectionToProcesses.get(section.id) || []
-        sectionProcesses.forEach(proc => processMap.set(proc.id, proc))
-      })
-
-      const processNodes = Array.from(processMap.values()).map(proc => ({
-        id: String(proc.id),
-        label: proc.name,
-        depth: baseDepth + 1,
-        children: []
-      }))
-
-      return {
-        id: chapter.id,
-        label: chapter.name || entityNames.get(chapter.id) || `设备名称${chapter.id}`,
-        depth: baseDepth,
-        children: processNodes
-      }
-    })
-  }
-
-  // ===== 4. 为其他分类构建设备类型子树（完全不变） =====
-  categoryList.forEach(cat => {
-    const typeList = typesByCategory.get(cat.label) || []
-    cat.children = typeList.map((type, idx) => {
-      if (!type) return null
-      const eqName = type.name || type.id || String(idx)
-      const chapterEntries = equipmentToChapters.get(eqName) || []
-      const chapterNodes = buildChapterNodes(chapterEntries, 3) // 设备名称深度3
-      return {
-        id: String(type.id || idx),
-        label: type.name,
-        depth: 2,
-        children: chapterNodes
-      }
-    }).filter(Boolean)
-  })
-
-  // ===== 5. 关键修改：找到原"静置设备"分类下的"静置设备"设备节点并直接提升为第一层 =====
-  let staticSettledNode = null
-  
-  // 遍历所有types，找到属于"静置设备"分类且名称为"静置设备"的节点
-  if (Array.isArray(types)) {
-    const targetType = types.find(t => 
-      t && t.category === '静置设备' && t.name === '静置设备'
-    )
-    
-    if (targetType) {
-      const chapterEntries = equipmentToChapters.get(targetType.name) || []
-      const chapterNodes = buildChapterNodes(chapterEntries, 2) // 设备名称深度2（因为设备现在是第一层）
-      
-      staticSettledNode = {
-        id: String(targetType.id),
-        label: targetType.name,
-        depth: 1, // 直接提升为第一层（设备分类级，绿色）
-        children: chapterNodes
-      }
-    }
-  }
-
-  // 如果在types中没有找到，尝试从relations中查找
-  if (!staticSettledNode && equipmentToChapters.has('静置设备')) {
-    const chapterEntries = equipmentToChapters.get('静置设备') || []
-    const chapterNodes = buildChapterNodes(chapterEntries, 2)
-    
-    staticSettledNode = {
-      id: 'relation-static-settled-equipment',
-      label: '静置设备',
-      depth: 1, // 直接提升为第一层（设备分类级，绿色）
-      children: chapterNodes
-    }
-  }
-
-  // 将静置设备节点添加到根节点的子节点列表中（与其他分类同级）
-  if (staticSettledNode) {
-    categoryList.push(staticSettledNode)
-  }
-
-  // ===== 6. 处理 relations 中无对应 type 的设备源 =====
-  const allEquipmentNames = new Set(
-    categoryList.flatMap(cat => {
-      if (cat.label === '静置设备') {
-        // 静置设备本身就是设备分类节点
-        return ['静置设备']
-      }
-      return (cat.children || []).map(n => n.label)
-    })
-  )
-
-  const extraNodes = []
-
-  equipmentToChapters.forEach((chapterEntries, sourceName) => {
-    if (!allEquipmentNames.has(sourceName) && 
-        sourceName !== '静置设备' &&
-        // 排除原静置设备分类下的其他设备
-        !['轴流式通风机', '特种过滤器', '管壳式换热器', '结晶器'].includes(sourceName)) {
-      const node = {
-        id: `relation-${sourceName}`,
-        label: sourceName,
-        depth: 2,
-        children: buildChapterNodes(chapterEntries, 3)
-      }
-      extraNodes.push(node)
-    }
-  })
-
-  // 将额外节点添加到"其他设备"分类下
-  if (extraNodes.length) {
-    const otherCategory = {
-      id: 'other-equipment',
-      label: '其他设备',
-      depth: 1,
-      children: extraNodes
-    }
-    categoryList.push(otherCategory)
-  }
-
-  // ===== 7. 更新全局树数据 =====
-  categoryNodes.value = categoryList.filter(cat => cat.children?.length || cat.label === '静置设备')
-
-  // 默认折叠所有工序节点（深度4）
-  const defaultCollapsed = new Set()
-  const collectNodesByDepth = (nodes, targetDepth) => {
-    nodes.forEach(n => {
-      if (n.depth === targetDepth) defaultCollapsed.add(n.id)
-      if (n.children) collectNodesByDepth(n.children, targetDepth)
-    })
-  }
-  categoryNodes.value.forEach(cat => collectNodesByDepth(cat.children || [], 4))
-  collapsedNodeIds.value = defaultCollapsed
-}
-// 缓存操作
+// ---------- 缓存与加载 ----------
 const loadFromCache = () => {
   try {
     const cached = localStorage.getItem(CACHE_KEY)
@@ -791,6 +893,7 @@ const saveToCache = (categories, types, relations) => {
   } catch (e) { /* ignore */ }
 }
 
+// ========== 关键修改：统一使用 updateLayout 回调执行居中 ==========
 const loadTree = async (forceUpdate = false) => {
   loading.value = true
   try {
@@ -799,8 +902,12 @@ const loadTree = async (forceUpdate = false) => {
       if (cached) {
         buildTree(cached.categories, cached.types, cached.relations)
         lastUpdateTime.value = cached.updateTime
-        updateLayout() // 触发首次布局
-        nextTick(() => centerOnRootNode())
+        // ✅ 传递回调，在布局完成后居中
+        updateLayout(() => {
+          nextTick(() => {
+            centerOnRootNode()
+          })
+        })
         ElMessage.success('从缓存加载成功')
         loading.value = false
         return
@@ -816,10 +923,14 @@ const loadTree = async (forceUpdate = false) => {
     }
     buildTree(catRes.data, typeRes.data, relationsRes.data)
     saveToCache(catRes.data, typeRes.data, relationsRes.data)
+    // ✅ 传递回调，在布局完成后居中
     updateLayout(() => {
-  centerOnRootNode()
-})
+      nextTick(() => {
+        centerOnRootNode()
+      })
+    })
     ElMessage.success(forceUpdate ? '更新成功' : '加载成功')
+    backendConnected.value = true
   } catch (err) {
     const msg = err?.message || ''
     if (msg.includes('Network Error') || msg.includes('ECONNREFUSED') || msg.includes('Failed to fetch') || msg.includes('timeout')) {
@@ -838,44 +949,15 @@ const updateData = () => loadTree(true)
 </script>
 
 <style scoped>
-.knowledge-tree-page {
-  padding: 16px;
-  height: 100%;
-  box-sizing: border-box;
-  background: linear-gradient(180deg, #f5f7fb 0%, #eef3fb 100%);
-  overflow: hidden;
-}
-.page-card {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  border-radius: 14px;
-  overflow: hidden;
-  background: #fff;
-}
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 22px 14px;
-  border-bottom: 1px solid #eef2f7;
-  flex-shrink: 0;
-}
+.knowledge-tree-page { padding: 16px; height: 100%; box-sizing: border-box; background: linear-gradient(180deg, #f5f7fb 0%, #eef3fb 100%); overflow: hidden; }
+.page-card { height: 100%; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: #fff; }
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #eef2f7; flex-shrink: 0; }
 .title-block { min-width: 0; }
 .page-title { font-size: 20px; font-weight: 800; color: #1f2937; }
 .page-subtitle { margin-top: 6px; color: #7a869a; font-size: 13px; }
 .header-tools { display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap; }
 .view-switch :deep(.el-button) { min-width: 110px; }
-.legend-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 22px 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
+.legend-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px 8px; flex-shrink: 0; flex-wrap: wrap; }
 .legend-items { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; }
 .legend-item { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #46556c; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
@@ -885,48 +967,60 @@ const updateData = () => loadTree(true)
 .legend-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .zoom-tools { display: flex; align-items: center; gap: 10px; }
 .zoom-percent { min-width: 52px; text-align: center; color: #475569; font-weight: 600; }
-.tree-stage { flex: 1; box-sizing: border-box; padding: 8px 18px 18px; }
-.tree-stage-inner {
-  height: 100%;
-  border-radius: 16px;
-  border: 1px solid #e7edf5;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-  overflow: hidden;
-  cursor: grab;
-  position: relative;
-}
+.tree-stage { box-sizing: border-box; padding: 8px 18px 18px; min-height: 850px; height: 850px; }
+.tree-stage-inner { height: 100%; border-radius: 16px; border: 1px solid #e7edf5; background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%); overflow: hidden; cursor: grab; position: relative; }
 .tree-stage-inner:active { cursor: grabbing; }
+.tree-stage-inner.list-mode { cursor: default; }
 .tree-canvas { width: 100%; height: 100%; }
 .empty-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.page-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 22px 18px;
-  flex-shrink: 0;
-  border-top: 1px solid #eef2f7;
-  flex-wrap: wrap;
-}
+.page-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px 18px; flex-shrink: 0; border-top: 1px solid #eef2f7; flex-wrap: wrap; }
 .footer-summary { color: #64748b; font-size: 13px; }
 .footer-update-info { color: #94a3b8; font-size: 12px; }
+.node-group { transition: transform 0.3s ease-in-out; }
+path { transition: d 0.3s ease-in-out; }
+.no-transition { transition: none !important; }
 
-/* 节点和连线的过渡（默认启用，大节点量时动态关闭） */
-.node-group {
-  transition: transform 0.3s ease-in-out;
+.list-view-container {
+  width: 100%;
+  height: 100%;
+  padding: 16px 20px;
+  overflow: auto;
+  background: #fafcff;
 }
-path {
-  transition: d 0.3s ease-in-out;
+.list-view-container .el-tree {
+  background: transparent;
 }
-.no-transition {
-  transition: none !important;
+.list-view-container .el-tree-node__content {
+  height: 40px;
+  border-bottom: 1px solid #f0f4f9;
+  transition: background 0.15s;
+}
+.list-view-container .el-tree-node__content:hover {
+  background: #eef6ff;
+}
+.list-node {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: #1f2937;
+  width: 100%;
+}
+.list-node-label {
+  font-weight: 500;
+}
+.list-node-count {
+  color: #7a869a;
+  font-size: 12px;
+}
+.list-node-depth {
+  margin-left: auto;
+  color: #b0bccd;
+  font-size: 12px;
 }
 
 @media (max-width: 1200px) {
-  .page-header, .legend-row, .page-footer {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+  .page-header, .legend-row, .page-footer { flex-direction: column; align-items: flex-start; }
   .header-tools { width: 100%; }
 }
 </style>

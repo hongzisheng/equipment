@@ -117,8 +117,8 @@
         />
       </div>
 
-      <div v-if="canOperateProcess" class="detail-section opinion">
-        <h4>{{ process.status === 'rejected' ? '重新确认意见' : '确认意见' }}</h4>
+      <div v-if="canConfirm || canReject" class="detail-section opinion">
+        <h4>审核意见</h4>
         <el-input
           v-model="opinionText"
           type="textarea"
@@ -134,22 +134,22 @@
       <span class="dialog-footer">
         <el-button @click="$emit('close')" size="small">关闭</el-button>
         <el-button
-          v-if="process && canOperateProcess"
-          type="primary"
-          size="small"
-          :loading="confirmLoading"
-          @click="handleConfirm"
-        >
-          <el-icon><Checked /></el-icon> 确认
-        </el-button>
-        <el-button
-          v-if="process"
+          v-if="canReject"
           type="danger"
           size="small"
           :loading="rejectLoading"
           @click="handleReject"
         >
           <el-icon><Close /></el-icon> 驳回
+        </el-button>
+        <el-button
+          v-if="canConfirm"
+          type="primary"
+          size="small"
+          :loading="confirmLoading"
+          @click="handleConfirm"
+        >
+          <el-icon><Checked /></el-icon> 确认
         </el-button>
       </span>
     </template>
@@ -162,7 +162,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Checked, Close } from '@element-plus/icons-vue'
 import ProcessStatusTag from './ProcessStatusTag.vue'
 import ProcessTimeline from './ProcessTimeline.vue'
-import { formatTime, formatWorkers, getOpinionPlaceholder } from '../utils'
+import { formatTime, formatWorkers, getOpinionPlaceholder, TERMINAL_STATUSES, NON_REJECTABLE_STATUSES, TASK_STATUS } from '../utils'
 
 const props = defineProps({
   visible: {
@@ -185,37 +185,48 @@ const opinionText = ref('')
 const confirmLoading = ref(false)
 const rejectLoading = ref(false)
 
-const canOperateProcess = computed(() => {
+// 管理员不可操作的状态：终态 + 待开始（工人动作） + 等待施工回签（工人动作）
+const ADMIN_NON_OPERABLE = new Set([
+  ...TERMINAL_STATUSES,
+  TASK_STATUS.RELEASED,
+  TASK_STATUS.PENDING_SIGN,
+])
+
+// 确认：非管理员不可操作状态即可确认
+const canConfirm = computed(() => {
   if (!props.process) return false
-  const status = props.process.status
-  return status === 'on_hold' || status === 'rejected'
+  return !ADMIN_NON_OPERABLE.has(props.process.status)
+})
+
+// 驳回：非终态且非待开始且非等待施工回签即可驳回
+const canReject = computed(() => {
+  if (!props.process) return false
+  return !NON_REJECTABLE_STATUSES.has(props.process.status)
+    && props.process.status !== TASK_STATUS.PENDING_SIGN
 })
 
 function handleConfirm() {
   if (!props.process) return
 
-  const confirmText = '确认完成'
-  const inputValue = opinionText.value
-
   ElMessageBox.confirm(
-    inputValue ? `确认意见：${inputValue}` : '确认完成此工序？',
-    `${confirmText} - ${props.process.process_name}`,
+    `确认后将进入下一状态。确认完成「${props.process.process_name}」？`,
+    `确认 - ${props.process.process_name}`,
     {
-      confirmButtonText: confirmText,
+      confirmButtonText: '确认',
       cancelButtonText: '取消',
       type: 'info',
       center: true,
       size: 'small'
     }
   ).then(() => {
-      confirmLoading.value = true
-      setTimeout(() => {
-        ElMessage.success(`"${props.process.process_name}" 已确认`)
-        emit('confirm', { process: props.process, comment: inputValue })
-        confirmLoading.value = false
-        opinionText.value = ''
-      }, 500)
-    }).catch(() => {
+    confirmLoading.value = true
+    setTimeout(() => {
+      ElMessage.success(`"${props.process.process_name}" 已确认`)
+      emit('confirm', { process: props.process, comment: opinionText.value })
+      confirmLoading.value = false
+      opinionText.value = ''
+    }, 500)
+  }).catch(() => {
     confirmLoading.value = false
   })
 }
@@ -223,10 +234,8 @@ function handleConfirm() {
 function handleReject() {
   if (!props.process) return
 
-  const rejectAction = props.process.status === 'rejected' ? '再次驳回' : '驳回'
-
-  ElMessageBox.prompt('请输入驳回原因', `${rejectAction} - ${props.process.process_name}`, {
-    confirmButtonText: `确定${rejectAction}`,
+  ElMessageBox.prompt('请输入驳回原因', `驳回 - ${props.process.process_name}`, {
+    confirmButtonText: '确定驳回',
     cancelButtonText: '取消',
     type: 'warning',
     inputPlaceholder: '请填写驳回原因（必填）',
@@ -236,7 +245,7 @@ function handleReject() {
   }).then(({ value }) => {
     rejectLoading.value = true
     setTimeout(() => {
-      ElMessage.warning(`已${rejectAction} "${props.process.process_name}"，原因：${value}`)
+      ElMessage.warning(`已驳回 "${props.process.process_name}"，原因：${value}`)
       emit('reject', { process: props.process, reason: value })
       rejectLoading.value = false
       opinionText.value = ''

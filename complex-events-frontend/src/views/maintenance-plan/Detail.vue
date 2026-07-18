@@ -45,50 +45,50 @@
         </el-descriptions>
 
         <!-- 统计卡片 -->
-        <el-row :gutter="20" class="stats-row">
+        <el-row :gutter="16" class="stats-row">
           <el-col :span="12">
-            <el-card class="stat-card stat-hours" shadow="never">
-              <div class="stat-header">
-                <el-icon><Timer /></el-icon>
-                <span>人工时统计</span>
+            <div class="stat-card stat-hours">
+              <div class="stat-title-wrap">
+                <el-icon class="stat-icon"><Timer /></el-icon>
+                <span class="stat-title">人工时统计</span>
               </div>
-              <div class="stat-body">
-                <div class="stat-item">
-                  <div class="stat-label">计划</div>
-                  <div class="stat-value stat-planned">{{ plan.planned_man_hours || 0 }} h</div>
+              <div class="stat-data">
+                <div class="stat-row">
+                  <span class="stat-row-label">计划</span>
+                  <span class="stat-row-value stat-planned">{{ plan.planned_man_hours || 0 }} h</span>
                 </div>
-                <div class="stat-item">
-                  <div class="stat-label">实际</div>
-                  <div class="stat-value stat-actual">{{ plan.actual_man_hours || 0 }} h</div>
+                <div class="stat-row">
+                  <span class="stat-row-label">实际</span>
+                  <span class="stat-row-value stat-actual">{{ plan.actual_man_hours || 0 }} h</span>
                 </div>
-                <div class="stat-item">
-                  <div class="stat-label">完成率</div>
-                  <div class="stat-value stat-rate">{{ hoursRate }}%</div>
+                <div class="stat-row">
+                  <span class="stat-row-label">完成率</span>
+                  <span class="stat-row-value stat-rate">{{ hoursRate }}%</span>
                 </div>
               </div>
-            </el-card>
+            </div>
           </el-col>
           <el-col :span="12">
-            <el-card class="stat-card stat-cost" shadow="never">
-              <div class="stat-header">
-                <el-icon><Money /></el-icon>
-                <span>成本统计</span>
+            <div class="stat-card stat-cost">
+              <div class="stat-title-wrap">
+                <el-icon class="stat-icon"><Money /></el-icon>
+                <span class="stat-title">成本统计</span>
               </div>
-              <div class="stat-body">
-                <div class="stat-item">
-                  <div class="stat-label">计划</div>
-                  <div class="stat-value stat-planned">¥{{ formatCost(plan.planned_cost) }}</div>
+              <div class="stat-data">
+                <div class="stat-row">
+                  <span class="stat-row-label">计划</span>
+                  <span class="stat-row-value stat-planned">¥{{ formatCost(plan.planned_cost) }}</span>
                 </div>
-                <div class="stat-item">
-                  <div class="stat-label">实际</div>
-                  <div class="stat-value stat-actual">¥{{ formatCost(plan.actual_cost) }}</div>
+                <div class="stat-row">
+                  <span class="stat-row-label">实际</span>
+                  <span class="stat-row-value stat-actual">¥{{ formatCost(plan.actual_cost) }}</span>
                 </div>
-                <div class="stat-item">
-                  <div class="stat-label">完成率</div>
-                  <div class="stat-value stat-rate">{{ costRate }}%</div>
+                <div class="stat-row">
+                  <span class="stat-row-label">完成率</span>
+                  <span class="stat-row-value stat-rate">{{ costRate }}%</span>
                 </div>
               </div>
-            </el-card>
+            </div>
           </el-col>
         </el-row>
 
@@ -371,48 +371,67 @@ onMounted(() => {
 }
 
 .stat-card {
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: #ffffff;
   border: 1px solid #f0f2f5;
 }
 
 .stat-hours {
-  border-left: 4px solid #3b82f6;
+  border-left: 3px solid #3b82f6;
 }
 
 .stat-cost {
-  border-left: 4px solid #10b981;
+  border-left: 3px solid #10b981;
 }
 
-.stat-header {
+.stat-title-wrap {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
+  gap: 4px;
+  min-width: 96px;
+  padding-right: 16px;
+  border-right: 1px dashed #e5e7eb;
+}
+
+.stat-icon {
+  font-size: 22px;
+  color: #64748b;
+}
+
+.stat-title {
+  font-size: 13px;
   font-weight: 600;
   color: #475569;
-  margin-bottom: 16px;
 }
 
-.stat-body {
+.stat-data {
+  flex: 1;
   display: flex;
-  gap: 24px;
-  justify-content: space-around;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 16px;
 }
 
-.stat-item {
-  text-align: center;
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.stat-label {
+.stat-row-label {
   font-size: 12px;
   color: #94a3b8;
-  margin-bottom: 6px;
 }
 
-.stat-value {
-  font-size: 18px;
+.stat-row-value {
+  font-size: 15px;
   font-weight: 600;
-  font-family: 'Courier New', monospace;
+  font-family: 'Roboto Mono', 'Consolas', monospace;
+  letter-spacing: 0.3px;
 }
 
 .stat-planned {

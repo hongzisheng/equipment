@@ -16,9 +16,25 @@ export function getProcessDetail(id) {
   })
 }
 
+/**
+ * 确认/驳回操作
+ * @param {Object} data - { id, action: 'confirm'|'reject', approval_comments }
+ */
 export function updateProcess(data) {
   return request({
     url: '/process/update',
+    method: 'post',
+    data: data
+  })
+}
+
+/**
+ * 管理员取消流程（任意状态 → cancelled）
+ * @param {Object} data - { id, approval_comments? }
+ */
+export function cancelProcess(data) {
+  return request({
+    url: '/process/cancel',
     method: 'post',
     data: data
   })

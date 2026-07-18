@@ -1,67 +1,97 @@
+// ==================== 状态常量 ====================
+
 export const TASK_STATUS = {
   RELEASED: 'released',
-  APPLY_START: 'apply_for_start',
-  ENG_APPROVED: 'eng_approved',
-  CONSTRUCTION_CONFIRMED: 'construction_confirmed',
-  TEAM_RECEIVED: 'team_received',
-  CONSTRUCTION_SIGNED: 'construction_signed',
-  PROCESS_CLOSED: 'process_closed',
-  EQUIPMENT_CLOSED: 'equipment_closed',
-  CANCELLED: 'cancelled'
+  PENDING_ENGINEER: 'pending_engineer',
+  PENDING_CONSTRUCTION: 'pending_construction',
+  PENDING_TEAM: 'pending_team',
+  PENDING_SIGN: 'pending_sign',
+  SUBMITTED: 'submitted',
+  PENDING_PROCESS_CLOSE: 'pending_process_close',
+  PENDING_EQUIPMENT_CLOSE: 'pending_equipment_close',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
 }
 
+// 终态集合
+export const TERMINAL_STATUSES = new Set(['completed', 'cancelled'])
+
+// 不可驳回的状态
+export const NON_REJECTABLE_STATUSES = new Set(['released', 'completed', 'cancelled'])
+
+// ==================== 状态→显示文字 ====================
+
 export const STATUS_LABEL_MAP = {
-  'pending': '待处理',
+  // 新状态
+  [TASK_STATUS.RELEASED]: '待开始',
+  [TASK_STATUS.PENDING_ENGINEER]: '等待工程师确认',
+  [TASK_STATUS.PENDING_CONSTRUCTION]: '等待施工确认',
+  [TASK_STATUS.PENDING_TEAM]: '等待班组受理',
+  [TASK_STATUS.PENDING_SIGN]: '等待施工回签',
+  [TASK_STATUS.SUBMITTED]: '已提交',
+  [TASK_STATUS.PENDING_PROCESS_CLOSE]: '等待工艺存储关闭',
+  [TASK_STATUS.PENDING_EQUIPMENT_CLOSE]: '等待设备部关闭',
+  [TASK_STATUS.COMPLETED]: '已完成',
+  [TASK_STATUS.CANCELLED]: '已取消',
+  // 兼容旧状态值
+  'pending': '待开始',
   'current': '进行中',
   'in_progress': '进行中',
   'on_hold': '待确认',
   'confirmed': '已确认',
-  [TASK_STATUS.RELEASED]: '待开始',
-  [TASK_STATUS.APPLY_START]: '申请开工',
-  [TASK_STATUS.ENG_APPROVED]: '工程师确认',
-  [TASK_STATUS.CONSTRUCTION_CONFIRMED]: '施工确认',
-  [TASK_STATUS.TEAM_RECEIVED]: '班组受理',
-  [TASK_STATUS.CONSTRUCTION_SIGNED]: '施工回签',
-  [TASK_STATUS.PROCESS_CLOSED]: '工艺存储关闭',
-  [TASK_STATUS.EQUIPMENT_CLOSED]: '设备部关闭',
-  [TASK_STATUS.CANCELLED]: '取消',
-  'completed': '已完成',
-  'rejected': '已驳回'
+  'rejected': '已驳回',
 }
+
+// ==================== 状态→Tag 颜色 ====================
 
 export function getStatusTagType(status) {
   const typeMap = {
+    [TASK_STATUS.RELEASED]: 'info',
+    [TASK_STATUS.PENDING_ENGINEER]: '',
+    [TASK_STATUS.PENDING_CONSTRUCTION]: '',
+    [TASK_STATUS.PENDING_TEAM]: '',
+    [TASK_STATUS.PENDING_SIGN]: 'warning',
+    [TASK_STATUS.SUBMITTED]: 'success',
+    [TASK_STATUS.PENDING_PROCESS_CLOSE]: '',
+    [TASK_STATUS.PENDING_EQUIPMENT_CLOSE]: '',
+    [TASK_STATUS.COMPLETED]: 'success',
+    [TASK_STATUS.CANCELLED]: 'danger',
+    // 兼容旧状态
     'completed': 'success',
     'confirmed': 'success',
     'current': 'primary',
     'in_progress': 'primary',
     'pending': 'info',
     'rejected': 'danger',
-    'on_hold': 'warning'
+    'on_hold': 'warning',
   }
   return typeMap[status] || 'info'
 }
+
+// ==================== 状态→显示文字 辅助函数 ====================
 
 export function getStatusText(status) {
   return STATUS_LABEL_MAP[status] || status
 }
 
+// ==================== 工具函数 ====================
+
 export function formatTime(timeStr) {
   if (!timeStr) return '--'
-  
+
   let datePart = timeStr
   let timePart = ''
-  
+
   if (timeStr.includes(' ')) {
-    [datePart, timePart] = timeStr.split(' ')
+    ;[datePart, timePart] = timeStr.split(' ')
   } else if (timeStr.includes('T')) {
-    [datePart, timePart] = timeStr.split('T')
+    ;[datePart, timePart] = timeStr.split('T')
   }
-  
+
   if (timePart) {
     return `${datePart} ${timePart.substring(0, 5)}`
   }
-  
+
   return datePart
 }
 
@@ -109,53 +139,38 @@ export function parseTimeToMinutes(timeStr) {
 }
 
 export function getOpinionPlaceholder(status) {
-  if (status === 'rejected') {
-    return '请填写重新确认意见（可选）'
-  }
-  return '请填写你的审核意见（可选）'
+  return '请填写审核意见（可选）'
 }
 
-export function getRowClassName(status) {
+// ==================== 行样式 ====================
+
+export function getRowClassName(row) {
+  const status = row?.status || row
   if (status === 'completed') return 'status-completed-row'
-  if (status === 'confirmed') return 'status-completed-row'
+  if (status === 'cancelled') return 'status-cancelled-row'
   if (status === 'rejected') return 'status-rejected-row'
-  if (status === 'current') return 'status-current-row'
-  if (status === 'on_hold') return 'status-on-hold-row'
-  if (status === 'in_progress') return 'status-in-progress-row'
-  if (status === 'pending') return 'status-pending-row'
+  if (status === 'pending_sign') return 'status-on-hold-row'
+  if (status === 'submitted') return 'status-submitted-row'
+  if (status === 'released') return 'status-pending-row'
   return ''
 }
 
-export function getCellStyle(status) {
-  if (status === 'current' || status === 'in_progress') {
-    return {
-      backgroundColor: '#e3f2fd',
-      borderBottom: '1px solid #bbdefb'
-    }
+export function getCellStyle(row) {
+  const status = row?.status || row
+  if (status === 'completed') {
+    return { backgroundColor: '#e8f5e8', borderBottom: '1px solid #c8e6c9' }
+  }
+  if (status === 'cancelled') {
+    return { backgroundColor: '#fce4ec', borderBottom: '1px solid #f8bbd0' }
   }
   if (status === 'rejected') {
-    return {
-      backgroundColor: '#ffebee',
-      borderBottom: '1px solid #ffcdd2'
-    }
+    return { backgroundColor: '#ffebee', borderBottom: '1px solid #ffcdd2' }
   }
-  if (status === 'completed' || status === 'confirmed') {
-    return {
-      backgroundColor: '#e8f5e8',
-      borderBottom: '1px solid #c8e6c9'
-    }
+  if (status === 'pending_sign') {
+    return { backgroundColor: '#fff3e0', borderBottom: '1px solid #ffe0b2' }
   }
-  if (status === 'on_hold') {
-    return {
-      backgroundColor: '#fff3e0',
-      borderBottom: '1px solid #ffe0b2'
-    }
-  }
-  if (status === 'pending') {
-    return {
-      backgroundColor: '#fafafa',
-      borderBottom: '1px solid #e0e0e0'
-    }
+  if (status === 'released') {
+    return { backgroundColor: '#fafafa', borderBottom: '1px solid #e0e0e0' }
   }
   return {}
 }

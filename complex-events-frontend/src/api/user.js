@@ -1,25 +1,31 @@
+import request from '@/utils/request'
+
 export function login(data) {
-  return Promise.resolve({
-    code: 20000,
-    data: {
-      token: 'test-token-12345'
-    }
+  return request({
+    url: '/user/login',
+    method: 'post',
+    data
   })
 }
 
-export function getInfo(token) {
-  return Promise.resolve({
-    code: 20000,
-    data: {
-      name: '管理员',
-      avatar: ''
-    }
+export function getInfo() {
+  return request({
+    url: '/user/info',
+    method: 'get'
   })
 }
 
 export function logout() {
-  return Promise.resolve({
-    code: 20000,
-    message: '退出成功'
+  return request({
+    url: '/user/logout',
+    method: 'post'
+  })
+}
+
+export function register(data) {
+  return request({
+    url: '/user/register',
+    method: 'post',
+    data
   })
 }

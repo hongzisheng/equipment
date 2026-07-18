@@ -41,7 +41,19 @@
         </span>
       </el-form-item>
 
-      <el-button :loading="loading" type="primary" style="width:100%;margin-bottom:30px;" @click="handleLogin">登 录</el-button>
+      <el-form-item class="role-item">
+        <el-radio-group v-model="loginForm.role" class="role-selector">
+          <el-radio-button value="admin">管理员登录</el-radio-button>
+          <el-radio-button value="worker">员工登录</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+
+      <el-button :loading="loading" type="primary" style="width:100%;margin-bottom:16px;" @click="handleLogin">登 录</el-button>
+
+      <div class="register-link">
+        没有账号？
+        <router-link to="/register">去注册</router-link>
+      </div>
 
     </el-form>
   </div>
@@ -49,6 +61,7 @@
 <script>
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { validUsername } from '@/utils/validate'
 import { useUserStore } from '@/stores/user'
 
@@ -98,7 +111,8 @@ export default {
       // 测试的时候默认输入
       loginForm: {
         username: '',
-        password: ''
+        password: '',
+        role: 'admin'
       },
       loginRules: {
         username: [{ required: true, trigger: 'blur', validator: validateUsername }],
@@ -131,20 +145,33 @@ export default {
     handleLogin() {
       console.log('handleLogin')
       this.loginFormRef.validate((valid) => {
-        if (valid) {
-          this.loading = true
-          // 使用 Pinia store 替代 Vuex
-          this.userStore.login(this.loginForm).then(() => {
-            // 修复：使用 this.router 而不是 useRouter()
-            this.router.push({ path: this.redirect || '/' })
-            this.loading = false
-          }).catch(() => {
+        if (!valid) return
+
+        this.loading = true
+        this.userStore.login(this.loginForm)
+          .then(() => this.userStore.getInfo())
+          .then((userInfo) => {
+            const selectedRole = this.loginForm.role
+            const actualRole = userInfo.role
+
+            if (actualRole !== selectedRole) {
+              // 角色不匹配，提示并重置
+              const roleMap = { admin: '管理员', worker: '员工' }
+              ElMessage.error(`该用户不是"${roleMap[selectedRole]}"身份，请重新选择`)
+              this.userStore.resetToken()
+              return
+            }
+
+            // 角色匹配，按身份跳转
+            const path = selectedRole === 'admin' ? (this.redirect || '/') : '/employee'
+            this.router.push({ path })
+          })
+          .catch((error) => {
+            console.error('登录失败:', error)
+          })
+          .finally(() => {
             this.loading = false
           })
-        } else {
-          console.log('error submit!!')
-          return false
-        }
       })
     }
   }
@@ -177,7 +204,7 @@ $focus_blue: #6c9dff;
 }
 
 .login-form {
-  width: min(520px, 100%);
+  width: min(600px, 100%);
   padding: 44px 38px 34px;
   background: $card-bg;
   border: 1px solid $border;
@@ -191,7 +218,7 @@ $focus_blue: #6c9dff;
   text-align: center;
 
   .title {
-    font-size: 28px;
+    font-size: 32px;
     color: #f8fafc;
     margin: 0;
     font-weight: 700;
@@ -223,8 +250,8 @@ $focus_blue: #6c9dff;
     border: 0;
     color: $light_gray;
     padding: 14px 12px 14px 52px;
-    height: 50px;
-    font-size: 15px;
+    height: 54px;
+    font-size: 17px;
     caret-color: $focus_blue;
 
     &:-webkit-autofill {
@@ -259,14 +286,167 @@ $focus_blue: #6c9dff;
 
 .el-button {
   width: 100%;
-  height: 50px;
+  height: 54px;
   border-radius: 14px;
-  font-size: 16px;
+  font-size: 18px;
   background: linear-gradient(90deg, #4f83ff 0%, #2e64ff 100%);
   border: none;
 }
 
 .el-button:hover {
   background: linear-gradient(90deg, #5e8dff 0%, #3a79ff 100%);
+}
+
+.role-item {
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  margin-bottom: 28px !important;
+  display: flex;
+  justify-content: center;
+}
+
+.role-selector {
+  position: relative;
+  display: flex;
+  width: 100%;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(6px);
+}
+
+/* 隐藏 el-radio-button 所有默认样式 */
+.role-selector :deep(.el-radio-button) {
+  position: relative;
+  flex: 1;
+}
+
+.role-selector :deep(.el-radio-button__original-radio) {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.role-selector :deep(.el-radio-button__inner) {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 13px 16px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #8892a0;
+  background: transparent;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  transition: color 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.role-selector :deep(.el-radio-button__inner:hover) {
+  color: #c8d0dc;
+  background: transparent;
+}
+
+/* 选中态：滑块高亮 */
+.role-selector :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  color: #ffffff;
+  background: transparent;
+  text-shadow: 0 0 20px rgba(79, 131, 255, 0.4);
+}
+
+/* 滑块背景 - 用伪元素模拟 */
+.role-selector :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-radius: 11px 0 0 11px;
+}
+
+.role-selector :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-radius: 0 11px 11px 0;
+}
+
+/* 第一个选中时，滑块在左侧 */
+.role-selector :deep(.el-radio-button:first-child.is-active .el-radio-button__inner)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 11px 0 0 11px;
+  background: linear-gradient(135deg, rgba(79, 131, 255, 0.25) 0%, rgba(46, 100, 255, 0.35) 100%);
+  border: 1px solid rgba(79, 131, 255, 0.4);
+  box-shadow:
+    0 0 24px rgba(79, 131, 255, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  z-index: -1;
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 第二个选中时，滑块在右侧 */
+.role-selector :deep(.el-radio-button:last-child.is-active .el-radio-button__inner)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 0 11px 11px 0;
+  background: linear-gradient(135deg, rgba(79, 131, 255, 0.25) 0%, rgba(46, 100, 255, 0.35) 100%);
+  border: 1px solid rgba(79, 131, 255, 0.4);
+  box-shadow:
+    0 0 24px rgba(79, 131, 255, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  z-index: -1;
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 去掉 el-radio-button 之间的边框 */
+.role-selector :deep(.el-radio-button + .el-radio-button) {
+  margin-left: 0;
+}
+
+.role-selector :deep(.el-radio-button__inner:not(:first-child)::before) {
+  display: none;
+}
+
+.register-link {
+  text-align: center;
+  font-size: 14px;
+  color: #8892a0;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 4px;
+
+  a {
+    color: $focus_blue;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 2px 10px;
+    margin-left: 2px;
+    border-radius: 6px;
+    background: rgba(108, 157, 255, 0.08);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &:hover {
+      background: rgba(108, 157, 255, 0.18);
+      color: #8ab4ff;
+      box-shadow: 0 0 16px rgba(108, 157, 255, 0.15);
+    }
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: scaleX(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 </style>

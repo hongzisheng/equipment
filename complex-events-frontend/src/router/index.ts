@@ -29,6 +29,11 @@ export const constantRoutes: RouteItem[] = [
     hidden: true,
   },
   {
+    path: '/register',
+    component: () => import('@/views/register/index.vue'),
+    hidden: true,
+  },
+  {
     path: '/404',
     component: EmptyPage,
     hidden: true,
@@ -184,6 +189,42 @@ export const constantRoutes: RouteItem[] = [
     ],
   },
   {
+    path: '/maintenance-plan',
+    component: () => import('@/layout/index.vue'),
+    redirect: '/maintenance-plan/list',
+    name: '检修计划管理',
+    meta: { title: '检修计划管理' },
+    children: [
+      {
+        path: '/maintenance-plan/list',
+        name: '检修计划列表',
+        component: () => import('@/views/maintenance-plan/index.vue'),
+        meta: { title: '检修计划列表' },
+      },
+      {
+        path: '/maintenance-plan/create',
+        name: '新建检修计划',
+        component: () => import('@/views/maintenance-plan/CreateOrEdit.vue'),
+        meta: { title: '新建检修计划' },
+        hidden: true,
+      },
+      {
+        path: '/maintenance-plan/edit/:id',
+        name: '编辑检修计划',
+        component: () => import('@/views/maintenance-plan/CreateOrEdit.vue'),
+        meta: { title: '编辑检修计划' },
+        hidden: true,
+      },
+      {
+        path: '/maintenance-plan/detail/:id',
+        name: '检修计划详情',
+        component: () => import('@/views/maintenance-plan/Detail.vue'),
+        meta: { title: '检修计划详情' },
+        hidden: true,
+      },
+    ],
+  },
+  {
     path: '/admin',
     component: () => import('@/layout/index.vue'),
     redirect: '/admin/flow',
@@ -220,6 +261,12 @@ export const constantRoutes: RouteItem[] = [
     ],
   },
   {
+    path: '/employee',
+    component: () => import('@/views/empty/index.vue'),
+    name: '员工端',
+    meta: { title: '员工端' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/404',
     hidden: true,
@@ -233,7 +280,7 @@ const router = createRouter({
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login']
+const whiteList = ['/login', '/register']
 
 router.beforeEach(async (to, from, next) => {
   NProgress.start()
@@ -248,8 +295,10 @@ router.beforeEach(async (to, from, next) => {
   // }
   if (hasToken) {
     if (to.path === '/login') {
-      next({ path: '/' })
+      // 登录页始终放行，不拦截
+      next()
       NProgress.done()
+      return
     } else if (userStore.name) {
       next()
     } else {

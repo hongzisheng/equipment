@@ -114,3 +114,52 @@ def chat():
             "error": str(e),
             "message": "聊天功能出错",
         }), 500
+
+
+@chat_bp.route("/chat/title", methods=["POST"])
+def generate_title():
+    """根据对话内容生成简短标题（控制成本：截断输入、低 tokens）"""
+    try:
+        data = request.get_json()
+        if not data or "message" not in data:
+            return jsonify({"success": False, "error": "缺少 message 参数"}), 400
+
+        user_message = data["message"]
+        # 截断 AI 回复，控制输入 token 成本
+        ai_reply = (data.get("reply") or "")[:150]
+
+        client = get_openai_client()
+        response = client.chat.completions.create(
+            model=Config.CHAT_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是标题生成助手，根据对话内容提炼核心主题，生成简短准确的中文标题。",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"请为以下对话生成一个中文标题。要求：不超过12字，不含标点和引号，"
+                        f"排除寒暄客套，直接返回标题文字。\n\n"
+                        f"用户：{user_message}\n助手：{ai_reply}"
+                    ),
+                },
+            ],
+            temperature=0.3,
+            max_tokens=20,
+        )
+
+        title = response.choices[0].message.content.strip()
+        # 后处理：取首行、去引号/标点、截断
+        title = title.split("\n")[0].strip().strip("\"'""''「」【】。.，,！!？?：: ")
+        if len(title) > 15:
+            title = title[:15]
+        if not title:
+            return jsonify({"success": False, "error": "生成标题为空"})
+
+        return jsonify({"success": True, "title": title})
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as e:
+        print(f"Title API Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500

@@ -1,0 +1,627 @@
+"""检修计划路由
+
+提供检修计划的 CRUD、关联工单管理、调度方案查询等接口。
+所有路由挂载在 workorder_mgmt_bp（url_prefix="/api"）下，
+因此装饰器中不重复写 /api 前缀。
+"""
+import json
+import sqlite3
+import traceback
+
+from flask import jsonify, request
+
+from . import workorder_mgmt_bp
+from app.models import Result
+from app.utils import get_db_connection
+
+
+# ======================== 列表查询 ========================
+
+@workorder_mgmt_bp.route("/maintenance-plans", methods=["GET"])
+def get_maintenance_plans():
+    """检修计划列表（支持分页、按名称/规模/状态筛选）"""
+    try:
+        page = request.args.get("page", 1, type=int)
+        page_size = request.args.get("page_size", 10, type=int)
+        plan_name = request.args.get("plan_name", "").strip()
+        plan_scale = request.args.get("plan_scale", "").strip()
+        status = request.args.get("status", "").strip()
+
+        conditions = []
+        params = []
+
+        if plan_name:
+            conditions.append("plan_name LIKE ?")
+            params.append(f"%{plan_name}%")
+        if plan_scale:
+            conditions.append("plan_scale = ?")
+            params.append(plan_scale)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+
+            # 总数
+            c.execute(f"SELECT COUNT(*) FROM maintenance_plans{where_clause}", params)
+            total = c.fetchone()[0]
+
+            # 分页数据
+            offset = (page - 1) * page_size
+            c.execute(
+                f"""
+                SELECT id, plan_name, plan_scale, status, initiator, initiated_at,
+                       planned_start_time, planned_end_time, actual_start_time, actual_end_time,
+                       planned_man_hours, actual_man_hours, planned_cost, actual_cost,
+                       schedule_plan_id, created_at, updated_at
+                FROM maintenance_plans{where_clause}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params + [page_size, offset],
+            )
+            rows = c.fetchall()
+            plans = [dict(row) for row in rows]
+
+            # 为每个计划附加关联工单数量
+            for plan in plans:
+                c.execute(
+                    "SELECT COUNT(*) FROM work_orders WHERE plan_id = ?",
+                    (plan["id"],),
+                )
+                plan["work_order_count"] = c.fetchone()[0]
+
+        return jsonify({
+            "success": True,
+            "data": plans,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "获取检修计划列表失败"}), 500
+
+
+# ======================== 详情查询 ========================
+
+@workorder_mgmt_bp.route("/maintenance-plans/<int:plan_id>", methods=["GET"])
+def get_maintenance_plan(plan_id):
+    """计划详情（含发起人、时间、成本、进度、关联工单列表）"""
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT id, plan_name, plan_scale, status, initiator, initiated_at,
+                       planned_start_time, planned_end_time, actual_start_time, actual_end_time,
+                       planned_man_hours, actual_man_hours, planned_cost, actual_cost,
+                       schedule_plan_id, created_at, updated_at
+                FROM maintenance_plans
+                WHERE id = ?
+                """,
+                (plan_id,),
+            )
+            plan = c.fetchone()
+            if not plan:
+                return jsonify({"success": False, "message": "检修计划不存在"}), 404
+
+            plan_dict = dict(plan)
+
+            # 关联工单列表
+            c.execute(
+                """
+                SELECT id, order_number, title, equipment_id, equipment_name,
+                       status, priority, created_at
+                FROM work_orders
+                WHERE plan_id = ?
+                ORDER BY created_at DESC
+                """,
+                (plan_id,),
+            )
+            work_orders = [dict(row) for row in c.fetchall()]
+
+            # 每个工单的任务统计
+            for wo in work_orders:
+                c.execute(
+                    """
+                    SELECT COUNT(*) AS total,
+                           SUM(CASE WHEN status IN ('equipment_closed') THEN 1 ELSE 0 END) AS completed
+                    FROM work_order_tasks
+                    WHERE work_order_id = ?
+                    """,
+                    (wo["id"],),
+                )
+                stat = c.fetchone()
+                wo["task_total"] = stat["total"]
+                wo["task_completed"] = stat["completed"] or 0
+
+            plan_dict["work_orders"] = work_orders
+            plan_dict["work_order_count"] = len(work_orders)
+
+        return jsonify({"success": True, "data": plan_dict})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "获取检修计划详情失败"}), 500
+
+
+# ======================== 新建计划 ========================
+
+@workorder_mgmt_bp.route("/maintenance-plans", methods=["POST"])
+def create_maintenance_plan():
+    """新建计划（传入计划信息 + 选择的工单ID数组）"""
+    try:
+        data = request.get_json()
+        plan_name = data.get("plan_name", "").strip()
+        plan_scale = data.get("plan_scale", "").strip()
+        status = data.get("status", "待开始").strip()
+        initiator = data.get("initiator", "").strip()
+        initiated_at = data.get("initiated_at")
+        planned_start_time = data.get("planned_start_time")
+        planned_end_time = data.get("planned_end_time")
+        actual_start_time = data.get("actual_start_time")
+        actual_end_time = data.get("actual_end_time")
+        planned_cost = data.get("planned_cost", 0)
+        actual_cost = data.get("actual_cost", 0)
+        work_order_ids = data.get("work_order_ids", [])
+
+        if not plan_name:
+            return jsonify({"success": False, "message": "计划名称不能为空"}), 400
+
+        with get_db_connection() as conn:
+            c = conn.cursor()
+
+            # 计算关联工单的总人工时和计划时间范围
+            planned_man_hours = 0
+            actual_man_hours = 0
+            auto_planned_start_time = None
+            auto_planned_end_time = None
+            if work_order_ids:
+                placeholders = ",".join("?" for _ in work_order_ids)
+                c.execute(
+                    f"""
+                    SELECT SUM(t.estimated_hours)
+                    FROM work_order_tasks t
+                    WHERE t.work_order_id IN ({placeholders})
+                    """,
+                    work_order_ids,
+                )
+                total = c.fetchone()[0]
+                if total:
+                    planned_man_hours = round(total, 1)
+
+                c.execute(
+                    f"""
+                    SELECT MIN(scheduled_start_time), MAX(scheduled_end_time)
+                    FROM work_orders
+                    WHERE id IN ({placeholders})
+                    """,
+                    work_order_ids,
+                )
+                time_range = c.fetchone()
+                auto_planned_start_time = time_range[0]
+                auto_planned_end_time = time_range[1]
+
+            planned_start_time = auto_planned_start_time or planned_start_time
+            planned_end_time = auto_planned_end_time or planned_end_time
+
+            # 插入检修计划
+            c.execute(
+                """
+                INSERT INTO maintenance_plans
+                    (plan_name, plan_scale, status, initiator, initiated_at,
+                     planned_start_time, planned_end_time, actual_start_time, actual_end_time,
+                     planned_man_hours, actual_man_hours, planned_cost, actual_cost)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    plan_name, plan_scale, status, initiator, initiated_at,
+                    planned_start_time, planned_end_time, actual_start_time, actual_end_time,
+                    planned_man_hours, actual_man_hours, planned_cost, actual_cost,
+                ),
+            )
+            new_plan_id = c.lastrowid
+
+            # 将选中的工单关联到该计划
+            if work_order_ids:
+                placeholders = ",".join("?" for _ in work_order_ids)
+                c.execute(
+                    f"""
+                    UPDATE work_orders SET plan_id = ?
+                    WHERE id IN ({placeholders}) AND plan_id IS NULL
+                    """,
+                    [new_plan_id] + work_order_ids,
+                )
+
+            conn.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "检修计划创建成功",
+            "data": {"id": new_plan_id, "plan_name": plan_name},
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "创建检修计划失败"}), 500
+
+
+# ======================== 更新计划 ========================
+
+# 允许更新的字段白名单
+_UPDATABLE_FIELDS = {
+    "plan_name", "plan_scale", "status", "initiator", "initiated_at",
+    "planned_start_time", "planned_end_time", "actual_start_time", "actual_end_time",
+    "planned_man_hours", "actual_man_hours", "planned_cost", "actual_cost",
+    "schedule_plan_id",
+}
+
+
+@workorder_mgmt_bp.route("/maintenance-plans/<int:plan_id>", methods=["PUT"])
+def update_maintenance_plan(plan_id):
+    """更新计划信息"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "请求体不能为空"}), 400
+
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id FROM maintenance_plans WHERE id = ?", (plan_id,))
+            if not c.fetchone():
+                return jsonify({"success": False, "message": "检修计划不存在"}), 404
+
+            # 从白名单构建 SET 子句
+            set_parts = []
+            values = []
+            for field in _UPDATABLE_FIELDS:
+                if field in data:
+                    set_parts.append(f"{field} = ?")
+                    values.append(data[field])
+
+            if not set_parts:
+                return jsonify({"success": False, "message": "没有需要更新的字段"}), 400
+
+            set_parts.append("updated_at = CURRENT_TIMESTAMP")
+            values.append(plan_id)
+
+            c.execute(
+                f"UPDATE maintenance_plans SET {', '.join(set_parts)} WHERE id = ?",
+                values,
+            )
+
+            # 如果请求中包含 work_order_ids，更新关联工单
+            if "work_order_ids" in data:
+                work_order_ids = data["work_order_ids"]
+                # 先清空旧的关联
+                c.execute(
+                    "UPDATE work_orders SET plan_id = NULL WHERE plan_id = ?",
+                    (plan_id,),
+                )
+                # 再设置新的关联
+                if work_order_ids:
+                    placeholders = ",".join("?" for _ in work_order_ids)
+                    c.execute(
+                        f"""
+                        UPDATE work_orders SET plan_id = ?
+                        WHERE id IN ({placeholders})
+                        """,
+                        [plan_id] + work_order_ids,
+                    )
+                # 重新计算人工时和计划时间范围
+                c.execute(
+                    f"""
+                    SELECT SUM(t.estimated_hours)
+                    FROM work_order_tasks t
+                    WHERE t.work_order_id IN ({placeholders})
+                    """,
+                    work_order_ids if work_order_ids else [0],
+                )
+                total = c.fetchone()[0]
+
+                c.execute(
+                    f"""
+                    SELECT MIN(scheduled_start_time), MAX(scheduled_end_time)
+                    FROM work_orders
+                    WHERE id IN ({placeholders})
+                    """,
+                    work_order_ids if work_order_ids else [0],
+                )
+                time_range = c.fetchone()
+                auto_planned_start_time = time_range[0]
+                auto_planned_end_time = time_range[1]
+
+                c.execute(
+                    """
+                    UPDATE maintenance_plans
+                    SET planned_man_hours = ?, planned_start_time = ?, planned_end_time = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        round(total, 1) if total else 0,
+                        auto_planned_start_time,
+                        auto_planned_end_time,
+                        plan_id,
+                    ),
+                )
+
+            conn.commit()
+
+        return jsonify({"success": True, "message": "检修计划更新成功"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "更新检修计划失败"}), 500
+
+
+# ======================== 删除计划 ========================
+
+@workorder_mgmt_bp.route("/maintenance-plans/<int:plan_id>", methods=["DELETE"])
+def delete_maintenance_plan(plan_id):
+    """删除计划（同步清空关联工单的 plan_id）"""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id FROM maintenance_plans WHERE id = ?", (plan_id,))
+            if not c.fetchone():
+                return jsonify({"success": False, "message": "检修计划不存在"}), 404
+
+            # 清空关联工单的 plan_id
+            c.execute(
+                "UPDATE work_orders SET plan_id = NULL WHERE plan_id = ?",
+                (plan_id,),
+            )
+            # 删除计划
+            c.execute(
+                "DELETE FROM maintenance_plans WHERE id = ?",
+                (plan_id,),
+            )
+            conn.commit()
+
+        return jsonify({"success": True, "message": "检修计划删除成功"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "删除检修计划失败"}), 500
+
+
+# ======================== 未计划工单 ========================
+
+@workorder_mgmt_bp.route("/work-orders/unplanned", methods=["GET"])
+def get_unplanned_work_orders():
+    """获取尚未被纳入任何计划的工单列表（供新建/编辑计划时选择）
+
+    支持传入 plan_id 参数：
+    - 不传 plan_id：只返回 plan_id IS NULL 的工单
+    - 传入 plan_id：返回 plan_id IS NULL 或 plan_id = 指定ID 的工单（用于编辑模式）
+    """
+    try:
+        plan_id = request.args.get("plan_id", type=int)
+
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+
+            if plan_id:
+                c.execute(
+                    """
+                    SELECT wo.id, wo.order_number, wo.title, wo.equipment_id, wo.equipment_name,
+                           wo.status, wo.priority, wo.created_at, wo.plan_id,
+                           wo.scheduled_start_time, wo.scheduled_end_time,
+                           COALESCE(SUM(t.estimated_hours), 0) as estimated_hours
+                    FROM work_orders wo
+                    LEFT JOIN work_order_tasks t ON t.work_order_id = wo.id
+                    WHERE wo.plan_id IS NULL OR wo.plan_id = ?
+                    GROUP BY wo.id
+                    ORDER BY wo.plan_id DESC, wo.created_at DESC
+                    """,
+                    (plan_id,),
+                )
+            else:
+                c.execute(
+                    """
+                    SELECT wo.id, wo.order_number, wo.title, wo.equipment_id, wo.equipment_name,
+                           wo.status, wo.priority, wo.created_at, NULL as plan_id,
+                           wo.scheduled_start_time, wo.scheduled_end_time,
+                           COALESCE(SUM(t.estimated_hours), 0) as estimated_hours
+                    FROM work_orders wo
+                    LEFT JOIN work_order_tasks t ON t.work_order_id = wo.id
+                    WHERE wo.plan_id IS NULL
+                    GROUP BY wo.id
+                    ORDER BY wo.created_at DESC
+                    """
+                )
+
+            rows = c.fetchall()
+            work_orders = [dict(row) for row in rows]
+            for wo in work_orders:
+                wo["is_associated"] = wo["plan_id"] is not None
+
+        return jsonify({"success": True, "data": work_orders})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "获取未计划工单失败"}), 500
+
+
+# ======================== 计划下工单详情 ========================
+
+@workorder_mgmt_bp.route("/maintenance-plans/<int:plan_id>/work-orders", methods=["GET"])
+def get_plan_work_orders(plan_id):
+    """获取该计划下的所有工单详情（含任务、设备信息）"""
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+
+            # 确认计划存在
+            c.execute("SELECT id, plan_name FROM maintenance_plans WHERE id = ?", (plan_id,))
+            plan = c.fetchone()
+            if not plan:
+                return jsonify({"success": False, "message": "检修计划不存在"}), 404
+
+            # 工单列表
+            c.execute(
+                """
+                SELECT wo.id, wo.order_number, wo.title, wo.equipment_id, wo.equipment_name,
+                       wo.status, wo.priority, wo.created_at,
+                       wo.scheduled_start_time, wo.scheduled_end_time
+                FROM work_orders wo
+                WHERE wo.plan_id = ?
+                ORDER BY wo.created_at DESC
+                """,
+                (plan_id,),
+            )
+            work_orders = []
+            for wo_row in c.fetchall():
+                wo = dict(wo_row)
+
+                # 设备信息
+                c.execute(
+                    """
+                    SELECT name, equipment_type_name, category
+                    FROM equipment_instances
+                    WHERE id = ?
+                    """,
+                    (wo["equipment_id"],),
+                )
+                eq = c.fetchone()
+                wo["equipment_type_name"] = eq["equipment_type_name"] if eq else ""
+                wo["equipment_category"] = eq["category"] if eq else ""
+
+                # 工单任务
+                c.execute(
+                    """
+                    SELECT id, task_code, process_id, process_name, process_code,
+                           equipment_id, equipment_name, description, estimated_hours,
+                           scheduled_start_time, scheduled_end_time, actual_start_time, actual_end_time,
+                           status, is_milestone, workers, predecessor_task_ids
+                    FROM work_order_tasks
+                    WHERE work_order_id = ?
+                    ORDER BY id
+                    """,
+                    (wo["id"],),
+                )
+                tasks = []
+                for t_row in c.fetchall():
+                    task = dict(t_row)
+                    # 解析 JSON 字段
+                    for json_field in ["workers", "predecessor_task_ids"]:
+                        if task.get(json_field):
+                            try:
+                                task[json_field] = json.loads(task[json_field])
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        else:
+                            task[json_field] = {} if json_field == "workers" else []
+                    task["is_milestone"] = bool(task["is_milestone"])
+                    tasks.append(task)
+
+                wo["tasks"] = tasks
+
+                # 任务统计
+                total_tasks = len(tasks)
+                completed_tasks = sum(
+                    1 for t in tasks if t["status"] in ("equipment_closed",)
+                )
+                wo["task_total"] = total_tasks
+                wo["task_completed"] = completed_tasks
+                wo["progress"] = round(completed_tasks / total_tasks * 100, 1) if total_tasks else 0
+
+                work_orders.append(wo)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "plan_id": plan["id"],
+                "plan_name": plan["plan_name"],
+                "work_orders": work_orders,
+            },
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "获取计划工单详情失败"}), 500
+
+
+# ======================== 查看调度方案 ========================
+
+@workorder_mgmt_bp.route("/maintenance-plans/<int:plan_id>/schedule-plan", methods=["GET"])
+def get_plan_schedule_plan(plan_id):
+    """查看该检修计划关联的调度方案
+
+    读取 maintenance_plans.schedule_plan_id，
+    若存在则查询 schedule_tasks 返回调度方案详情。
+    """
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+
+            # 确认计划存在并获取 schedule_plan_id
+            c.execute(
+                "SELECT id, plan_name, schedule_plan_id FROM maintenance_plans WHERE id = ?",
+                (plan_id,),
+            )
+            plan = c.fetchone()
+            if not plan:
+                return jsonify({"success": False, "message": "检修计划不存在"}), 404
+
+            if not plan["schedule_plan_id"]:
+                return jsonify({
+                    "success": True,
+                    "data": None,
+                    "message": "该计划暂无关联的调度方案",
+                })
+
+            schedule_plan_id = plan["schedule_plan_id"]
+
+            # 查询该计划下所有工单的设备ID，用于匹配 schedule_tasks
+            c.execute(
+                "SELECT DISTINCT equipment_id FROM work_orders WHERE plan_id = ?",
+                (plan_id,),
+            )
+            equipment_ids = [row["equipment_id"] for row in c.fetchall()]
+
+            if not equipment_ids:
+                return jsonify({
+                    "success": True,
+                    "data": None,
+                    "message": "该计划下无关联工单",
+                })
+
+            # 查询调度任务
+            placeholders = ",".join("?" for _ in equipment_ids)
+            c.execute(
+                f"""
+                SELECT schedule_id, process_id, process_name, equipment_id, equipment_name,
+                       equipment_type_id, equipment_type_name, equipment_category,
+                       start_time, end_time, start_time_formatted, end_time_formatted,
+                       duration_days, workers, predecessors
+                FROM schedule_tasks
+                WHERE equipment_id IN ({placeholders})
+                ORDER BY equipment_id, start_time
+                """,
+                equipment_ids,
+            )
+            rows = c.fetchall()
+            schedule_tasks = []
+            for row in rows:
+                task = dict(row)
+                for json_field in ["workers", "predecessors"]:
+                    if task.get(json_field):
+                        try:
+                            task[json_field] = json.loads(task[json_field])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    else:
+                        task[json_field] = {} if json_field == "workers" else []
+                schedule_tasks.append(task)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "schedule_plan_id": schedule_plan_id,
+                "plan_id": plan_id,
+                "plan_name": plan["plan_name"],
+                "schedule_tasks": schedule_tasks,
+            },
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "获取调度方案失败"}), 500

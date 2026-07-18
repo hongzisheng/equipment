@@ -132,6 +132,30 @@ CREATE TABLE "graph_relations_archive" (
 );
 
 -- ----------------------------
+-- Table structure for maintenance_plans
+-- ----------------------------
+DROP TABLE IF EXISTS "maintenance_plans";
+CREATE TABLE "maintenance_plans" (
+  "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+  "plan_name" VARCHAR(200) NOT NULL,
+  "plan_scale" VARCHAR(50),
+  "status" VARCHAR(50) DEFAULT '待开始',
+  "initiator" VARCHAR(100),
+  "initiated_at" DATETIME,
+  "planned_start_time" TEXT,
+  "planned_end_time" TEXT,
+  "actual_start_time" TEXT,
+  "actual_end_time" TEXT,
+  "planned_man_hours" REAL DEFAULT 0,
+  "actual_man_hours" REAL DEFAULT 0,
+  "planned_cost" REAL DEFAULT 0,
+  "actual_cost" REAL DEFAULT 0,
+  "schedule_plan_id" VARCHAR(100),
+  "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ----------------------------
 -- Table structure for maintenance_tools
 -- ----------------------------
 DROP TABLE IF EXISTS "maintenance_tools";
@@ -376,6 +400,7 @@ CREATE TABLE "work_orders" (
   "actual_end_time" INTEGER,
   "priority" VARCHAR(10) NOT NULL DEFAULT 'medium',
   "remarks" TEXT,
+  "plan_id" INTEGER,
   FOREIGN KEY ("equipment_id") REFERENCES "_equipment_instances_old_20260401" ("id") ON DELETE RESTRICT ON UPDATE NO ACTION,
   FOREIGN KEY ("created_by") REFERENCES "users" ("id") ON DELETE RESTRICT ON UPDATE NO ACTION,
   UNIQUE ("order_number" ASC)

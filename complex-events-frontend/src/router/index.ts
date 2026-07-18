@@ -220,6 +220,12 @@ export const constantRoutes: RouteItem[] = [
     ],
   },
   {
+    path: '/employee',
+    component: () => import('@/views/empty/index.vue'),
+    name: '员工端',
+    meta: { title: '员工端' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/404',
     hidden: true,
@@ -248,8 +254,10 @@ router.beforeEach(async (to, from, next) => {
   // }
   if (hasToken) {
     if (to.path === '/login') {
-      next({ path: '/' })
+      // 登录页始终放行，不拦截
+      next()
       NProgress.done()
+      return
     } else if (userStore.name) {
       next()
     } else {

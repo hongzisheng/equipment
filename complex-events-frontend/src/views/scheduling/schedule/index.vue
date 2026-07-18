@@ -1115,17 +1115,8 @@ function exportAssignmentToExcel() {
   
   // 准备第一个工作表的数据 - 按开始时间排序
   const sortedByStartTime = [...assignmentRows.value].sort((a, b) => {
-    // 从开始时间字符串中提取天数和时间进行排序
-    const dayA = parseInt(a.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-    const dayB = parseInt(b.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-    
-    if (dayA !== dayB) {
-      return dayA - dayB;
-    }
-    
-    const timeA = a.startTimeFormatted.split(' ')[1];
-    const timeB = b.startTimeFormatted.split(' ')[1];
-    return timeA.localeCompare(timeB);
+    // startTimeFormatted 格式为 "YYYY-MM-DD HH:MM:SS"，字符串字典序即时间顺序
+    return a.startTimeFormatted.localeCompare(b.startTimeFormatted)
   });
   
   const data1 = sortedByStartTime.map(row => ({
@@ -1165,16 +1156,8 @@ function exportAssignmentToExcel() {
   // 对每个设备内的工序按开始时间排序
   Object.keys(groupedByDevice).forEach(device => {
     groupedByDevice[device].sort((a, b) => {
-      const dayA = parseInt(a.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-      const dayB = parseInt(b.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-      
-      if (dayA !== dayB) {
-        return dayA - dayB;
-      }
-      
-      const timeA = a.startTimeFormatted.split(' ')[1];
-      const timeB = b.startTimeFormatted.split(' ')[1];
-      return timeA.localeCompare(timeB);
+      // startTimeFormatted 格式为 "YYYY-MM-DD HH:MM:SS"，字符串字典序即时间顺序
+      return a.startTimeFormatted.localeCompare(b.startTimeFormatted)
     });
   });
 

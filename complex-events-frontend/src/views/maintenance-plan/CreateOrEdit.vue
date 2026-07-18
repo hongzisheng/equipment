@@ -75,25 +75,21 @@
 
           <el-row :gutter="24">
             <el-col :span="12">
-              <el-form-item label="计划开始时间" prop="planned_start_time">
-                <el-date-picker
-                  v-model="form.planned_start_time"
-                  type="datetime"
-                  placeholder="选择计划开始时间"
-                  format="YYYY-MM-DD HH:mm:ss"
-                  value-format="YYYY-MM-DD HH:mm:ss"
+              <el-form-item label="计划开始时间">
+                <el-input
+                  :value="autoPlannedStartTime"
+                  readonly
+                  placeholder="选择工单后自动计算"
                   style="width: 100%"
                 />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="计划结束时间" prop="planned_end_time">
-                <el-date-picker
-                  v-model="form.planned_end_time"
-                  type="datetime"
-                  placeholder="选择计划结束时间"
-                  format="YYYY-MM-DD HH:mm:ss"
-                  value-format="YYYY-MM-DD HH:mm:ss"
+              <el-form-item label="计划结束时间">
+                <el-input
+                  :value="autoPlannedEndTime"
+                  readonly
+                  placeholder="选择工单后自动计算"
                   style="width: 100%"
                 />
               </el-form-item>
@@ -314,6 +310,24 @@ const totalPlannedManHours = computed(() => {
   return selectedWorkOrders.value.reduce((sum, wo) => {
     return sum + (wo.estimated_hours || 0)
   }, 0).toFixed(1)
+})
+
+const autoPlannedStartTime = computed(() => {
+  if (selectedWorkOrders.value.length === 0) return ''
+  const times = selectedWorkOrders.value
+    .map((wo) => wo.scheduled_start_time)
+    .filter(Boolean)
+  if (times.length === 0) return '选中工单均未设置时间'
+  return [...times].sort()[0]
+})
+
+const autoPlannedEndTime = computed(() => {
+  if (selectedWorkOrders.value.length === 0) return ''
+  const times = selectedWorkOrders.value
+    .map((wo) => wo.scheduled_end_time)
+    .filter(Boolean)
+  if (times.length === 0) return '选中工单均未设置时间'
+  return [...times].sort().pop()
 })
 
 // 获取未计划工单（编辑模式下传入 plan_id 获取已关联+未计划工单）

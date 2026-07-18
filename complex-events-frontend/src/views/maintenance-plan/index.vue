@@ -92,8 +92,10 @@
               @change="handleSearch"
             />
           </div>
-          <el-button size="small" @click="resetSearch">重置</el-button>
-          <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
+          <div class="filter-actions">
+            <el-button size="small" @click="resetSearch">重置</el-button>
+            <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
+          </div>
         </div>
 
         <el-table
@@ -105,7 +107,7 @@
           style="width: 100%"
         >
           <el-table-column type="index" label="序号" width="55" align="center" />
-          <el-table-column prop="plan_name" label="计划名称" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="plan_name" label="计划名称" min-width="150" align="center" show-overflow-tooltip />
           <el-table-column prop="plan_scale" label="规模" min-width="90" align="center" />
           <el-table-column prop="status" label="当前进度" min-width="120" align="center">
             <template #default="{ row }">
@@ -168,7 +170,7 @@
 
         <div class="bottom-bar">
           <el-button type="primary" @click="goCreate">
-            <el-icon><Plus /></el-icon> + 新增检修计划
+            <el-icon><Plus /></el-icon> 新增检修计划
           </el-button>
           <div class="pagination-wrapper">
             <span class="total-text">共 {{ pagination.total }} 条</span>
@@ -341,8 +343,9 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   margin-bottom: 20px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  overflow-x: auto;
 }
 
 .search-input {
@@ -372,6 +375,13 @@ onMounted(() => {
 .date-sep {
   color: #909399;
   font-size: 12px;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .plan-table {

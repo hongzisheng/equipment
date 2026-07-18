@@ -174,9 +174,11 @@ def create_maintenance_plan():
         with get_db_connection() as conn:
             c = conn.cursor()
 
-            # 计算关联工单的总人工时
+            # 计算关联工单的总人工时和计划时间范围
             planned_man_hours = 0
             actual_man_hours = 0
+            auto_planned_start_time = None
+            auto_planned_end_time = None
             if work_order_ids:
                 placeholders = ",".join("?" for _ in work_order_ids)
                 c.execute(
@@ -190,6 +192,21 @@ def create_maintenance_plan():
                 total = c.fetchone()[0]
                 if total:
                     planned_man_hours = round(total, 1)
+
+                c.execute(
+                    f"""
+                    SELECT MIN(scheduled_start_time), MAX(scheduled_end_time)
+                    FROM work_orders
+                    WHERE id IN ({placeholders})
+                    """,
+                    work_order_ids,
+                )
+                time_range = c.fetchone()
+                auto_planned_start_time = time_range[0]
+                auto_planned_end_time = time_range[1]
+
+            planned_start_time = auto_planned_start_time or planned_start_time
+            planned_end_time = auto_planned_end_time or planned_end_time
 
             # 插入检修计划
             c.execute(
@@ -293,7 +310,7 @@ def update_maintenance_plan(plan_id):
                         """,
                         [plan_id] + work_order_ids,
                     )
-                # 重新计算人工时
+                # 重新计算人工时和计划时间范围
                 c.execute(
                     f"""
                     SELECT SUM(t.estimated_hours)
@@ -303,9 +320,31 @@ def update_maintenance_plan(plan_id):
                     work_order_ids if work_order_ids else [0],
                 )
                 total = c.fetchone()[0]
+
                 c.execute(
-                    "UPDATE maintenance_plans SET planned_man_hours = ? WHERE id = ?",
-                    (round(total, 1) if total else 0, plan_id),
+                    f"""
+                    SELECT MIN(scheduled_start_time), MAX(scheduled_end_time)
+                    FROM work_orders
+                    WHERE id IN ({placeholders})
+                    """,
+                    work_order_ids if work_order_ids else [0],
+                )
+                time_range = c.fetchone()
+                auto_planned_start_time = time_range[0]
+                auto_planned_end_time = time_range[1]
+
+                c.execute(
+                    """
+                    UPDATE maintenance_plans
+                    SET planned_man_hours = ?, planned_start_time = ?, planned_end_time = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        round(total, 1) if total else 0,
+                        auto_planned_start_time,
+                        auto_planned_end_time,
+                        plan_id,
+                    ),
                 )
 
             conn.commit()
@@ -367,6 +406,7 @@ def get_unplanned_work_orders():
                     """
                     SELECT wo.id, wo.order_number, wo.title, wo.equipment_id, wo.equipment_name,
                            wo.status, wo.priority, wo.created_at, wo.plan_id,
+                           wo.scheduled_start_time, wo.scheduled_end_time,
                            COALESCE(SUM(t.estimated_hours), 0) as estimated_hours
                     FROM work_orders wo
                     LEFT JOIN work_order_tasks t ON t.work_order_id = wo.id
@@ -381,6 +421,7 @@ def get_unplanned_work_orders():
                     """
                     SELECT wo.id, wo.order_number, wo.title, wo.equipment_id, wo.equipment_name,
                            wo.status, wo.priority, wo.created_at, NULL as plan_id,
+                           wo.scheduled_start_time, wo.scheduled_end_time,
                            COALESCE(SUM(t.estimated_hours), 0) as estimated_hours
                     FROM work_orders wo
                     LEFT JOIN work_order_tasks t ON t.work_order_id = wo.id

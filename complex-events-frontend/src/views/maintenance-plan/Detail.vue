@@ -13,6 +13,9 @@
           <el-button @click="goEdit">
             <el-icon><Edit /></el-icon> 编辑
           </el-button>
+          <el-button type="danger" @click="handleDelete">
+            <el-icon><Delete /></el-icon> 删除
+          </el-button>
           <el-button @click="goBack">
             <el-icon><ArrowLeft /></el-icon> 返回
           </el-button>
@@ -198,9 +201,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Document, View, Edit, ArrowLeft, Timer, Money } from '@element-plus/icons-vue'
-import { getMaintenancePlan, getPlanSchedulePlan } from '@/api/maintenancePlan'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Document, View, Edit, ArrowLeft, Timer, Money, Delete } from '@element-plus/icons-vue'
+import { getMaintenancePlan, getPlanSchedulePlan, deleteMaintenancePlan } from '@/api/maintenancePlan'
 
 defineOptions({ name: 'MaintenancePlanDetail' })
 
@@ -259,6 +262,28 @@ const goEdit = () => {
 
 const goBack = () => {
   router.push('/maintenance-plan/list')
+}
+
+const handleDelete = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除该检修计划吗？删除后关联的工单将回归工单池，可供创建新计划时选择。',
+      '确认删除',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    await deleteMaintenancePlan(planId.value)
+    ElMessage.success('删除成功')
+    router.push('/maintenance-plan/list')
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error)
+      ElMessage.error('删除失败')
+    }
+  }
 }
 
 // 格式化

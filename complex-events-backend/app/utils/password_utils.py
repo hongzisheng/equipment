@@ -8,8 +8,7 @@
 """
 
 import base64
-
-import scrypt as _scrypt
+import hashlib
 
 from app.extension import bcrypt
 
@@ -20,38 +19,27 @@ def hash_password(password: str) -> str:
 
 
 def _check_scrypt(password: str, hashed: str) -> bool:
-    """校验 scrypt 格式密码（Django 格式: scrypt:N:r:p$salt$hash）
-
-    注：Django 的 salt 以原始字符串形式存储，直接作为 scrypt salt 输入，
-        hash 部分则是 base64 编码后的 scrypt 输出。
-    """
+    """校验 scrypt 格式密码（Django 格式: scrypt:N:r:p$salt$hash）"""
     try:
         parts = hashed.split("$", 2)
         if len(parts) != 3:
             return False
-        param_str, salt_str, hash_b64 = parts
+        param_str, salt_b64, hash_hex = parts
         params = param_str.split(":")
         N = int(params[1])
         r = int(params[2])
         p = int(params[3])
 
-        # Django 存储的 salt 是原始字符串，直接 encode 为 UTF-8 字节使用
-        salt_bytes = salt_str.encode("utf-8")
+        def b64_decode(s: str) -> bytes:
+            padding = 4 - len(s) % 4
+            if padding != 4:
+                s += "=" * padding
+            return base64.b64decode(s)
 
-        # hash 部分需 base64 解码
-        padding = 4 - len(hash_b64) % 4
-        if padding != 4:
-            hash_b64 += "=" * padding
-        expected = base64.b64decode(hash_b64)
-
-        actual = _scrypt.hash(
-            password.encode("utf-8"),
-            salt_bytes,
-            N=N,
-            r=r,
-            p=p,
-            buflen=len(expected),
-        )
+        salt = b64_decode(salt_b64)
+        expected = bytes.fromhex(hash_hex)
+        maxmem = max(128 * N * r * p + 1024, 64 * 1024 * 1024)
+        actual = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=N, r=r, p=p, maxmem=maxmem, dklen=len(expected))
         return actual == expected
     except Exception:
         return False

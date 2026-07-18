@@ -201,18 +201,16 @@ const pagedDevices = computed(() => {
 const handleSizeChange = (val) => {
   pageSize.value = val
   currentPage.value = 1 // 重置为第一页
-  // 分页变化后重新全选
   nextTick(() => {
-    selectAllDevicesGlobally()
+    restoreSelectionOnCurrentPage()
   })
 }
 
 // 处理当前页变更
 const handleCurrentChange = (val) => {
   currentPage.value = val
-  // 页码变化后重新全选
   nextTick(() => {
-    selectAllDevicesGlobally()
+    restoreSelectionOnCurrentPage()
   })
 }
 
@@ -250,6 +248,16 @@ const selectAllDevices = () => {
       deviceTableRef.value.toggleRowSelection(row, true)
     })
   }
+}
+
+// 恢复当前页中已选行的勾选状态（不全选，只恢复 selectedDeviceIds 中已存在的）
+const restoreSelectionOnCurrentPage = () => {
+  if (!deviceTableRef.value) return
+  pagedDevices.value.forEach(row => {
+    if (selectedDeviceIds.value.has(row.id)) {
+      deviceTableRef.value.toggleRowSelection(row, true)
+    }
+  })
 }
 
 // 全选所有设备（包括未在当前页面显示的）
@@ -366,11 +374,6 @@ const fetchDevices = async () => {
         category: item.category,
         status: '正常'
       }))
-      
-      // 数据加载完成后全选所有数据
-      nextTick(() => {
-        selectAllDevicesGlobally()
-      })
     } else {
       // 加载默认数据
       loadDefaultDevices()
@@ -393,11 +396,6 @@ const loadDefaultDevices = () => {
     { id: 7, name: '变压器 T6002', equipment_type_id: 'EQ-3001', equipment_type_name: '变压器', status: '正常', category: '电气' },
     { id: 8, name: 'DCS系统 D6001', equipment_type_id: 'EQ-4001', equipment_type_name: 'DCS系统', status: '正常', category: '仪表' }
   ]
-  
-  // 加载完成后全选
-  nextTick(() => {
-    selectAllDevicesGlobally()
-  })
 }
 
 // 保存选中设备到后端

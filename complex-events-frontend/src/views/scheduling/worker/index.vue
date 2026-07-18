@@ -392,7 +392,7 @@ const handleSizeChange = (val) => {
   pageSize.value = val
   currentPage.value = 1
   nextTick(() => {
-    selectAllWorkersGlobally()
+    restoreSelectionOnCurrentPage()
   })
 }
 
@@ -400,7 +400,7 @@ const handleSizeChange = (val) => {
 const handleCurrentChange = (val) => {
   currentPage.value = val
   nextTick(() => {
-    selectAllWorkersGlobally()
+    restoreSelectionOnCurrentPage()
   })
 }
 
@@ -425,6 +425,16 @@ const handleSelectionChange = (selection) => {
   
   selectedWorkers.value = workers.value.filter(worker => selectedWorkerIds.value.has(worker.id))
 }
+// 恢复当前页中已选行的勾选状态（不全选，只恢复 selectedWorkerIds 中已存在的）
+const restoreSelectionOnCurrentPage = () => {
+  if (!workerTableRef.value) return
+  pagedWorkers.value.forEach(row => {
+    if (selectedWorkerIds.value.has(row.id)) {
+      workerTableRef.value.toggleRowSelection(row, true)
+    }
+  })
+}
+
 // 全选所有工人
 const selectAllWorkersGlobally = () => {
   if (workerTableRef.value && workers.value.length > 0) {
@@ -466,9 +476,6 @@ const fetchWorkers = async () => {
         }
       })
       generateTableColumns(data.data.workers[0])
-      nextTick(() => {
-        selectAllWorkersGlobally()
-      })
     } else {
       loadDefaultWorkers()
     }
@@ -545,10 +552,6 @@ const loadDefaultWorkers = () => {
   })
   
   generateTableColumns(workers.value[0])
-  
-  nextTick(() => {
-    selectAllWorkersGlobally()
-  })
 }
 
 // 根据数据字段动态生成表格列（过滤掉创建时间、emp_id等）

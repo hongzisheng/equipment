@@ -953,3 +953,278 @@ def get_schedule_plan_detail(schedule_plan_id):
     except Exception as e:
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e), "message": "获取方案详情失败"}), 500
+
+
+# ======================== 方案对比 ========================
+
+@workorder_mgmt_bp.route("/schedule-plans/compare", methods=["GET"])
+def compare_schedule_plans():
+    """对比两个调度方案
+
+    查询参数：id1, id2（两个方案的 schedule_plan_id）
+    返回：两个方案的元信息、任务列表、概览统计、任务级差异
+    """
+    try:
+        id1 = request.args.get("id1", type=int)
+        id2 = request.args.get("id2", type=int)
+        if not id1 or not id2:
+            return jsonify({"success": False, "message": "请提供 id1 和 id2 两个参数"}), 400
+        if id1 == id2:
+            return jsonify({"success": False, "message": "不能对比同一个方案"}), 400
+
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+            plans_data = {}
+            for plan_id in (id1, id2):
+                c.execute(
+                    """SELECT id, plan_id, schedule_name, algorithm, status, work_order_ids,
+                              project_start_datetime, statistics, total_tasks, created_at
+                       FROM schedule_plans WHERE id = ?""",
+                    (plan_id,),
+                )
+                plan = c.fetchone()
+                if not plan:
+                    return jsonify({"success": False, "message": f"方案 {plan_id} 不存在"}), 404
+
+                plan_dict = dict(plan)
+                if plan_dict.get("work_order_ids"):
+                    try:
+                        plan_dict["work_order_ids"] = json.loads(plan_dict["work_order_ids"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if plan_dict.get("statistics"):
+                    try:
+                        plan_dict["statistics"] = json.loads(plan_dict["statistics"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                c.execute(
+                    """SELECT schedule_id, process_id, process_name, equipment_id, equipment_name,
+                              equipment_type_id, equipment_type_name, equipment_category,
+                              start_time, end_time, start_time_formatted, end_time_formatted,
+                              duration_days, workers, predecessors
+                       FROM schedule_tasks
+                       WHERE schedule_plan_id = ?
+                       ORDER BY equipment_id, start_time""",
+                    (plan_id,),
+                )
+                tasks = []
+                for row in c.fetchall():
+                    task = dict(row)
+                    for json_field in ["workers", "predecessors"]:
+                        if task.get(json_field):
+                            try:
+                                task[json_field] = json.loads(task[json_field])
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        else:
+                            task[json_field] = {} if json_field == "workers" else []
+                    tasks.append(task)
+                plan_dict["schedule_tasks"] = tasks
+                plans_data[plan_id] = plan_dict
+
+            plan1 = plans_data[id1]
+            plan2 = plans_data[id2]
+
+            overview1 = _compute_plan_overview(plan1)
+            overview2 = _compute_plan_overview(plan2)
+            task_diff = _compute_task_diff(plan1["schedule_tasks"], plan2["schedule_tasks"])
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "plan1": plan1,
+                "plan2": plan2,
+                "overview1": overview1,
+                "overview2": overview2,
+                "task_diff": task_diff,
+            },
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "方案对比失败"}), 500
+
+
+def _compute_plan_overview(plan):
+    """计算方案概览统计：总任务数、总工期、起止时间、工人数量、按设备分组"""
+    tasks = plan.get("schedule_tasks") or []
+    if not tasks:
+        return {
+            "total_tasks": 0,
+            "total_duration_days": 0,
+            "start_time": None,
+            "end_time": None,
+            "start_time_formatted": None,
+            "end_time_formatted": None,
+            "worker_count": 0,
+            "workers": [],
+            "by_equipment": {},
+        }
+
+    indexed_starts = [(i, t["start_time"]) for i, t in enumerate(tasks) if t.get("start_time") is not None]
+    indexed_ends = [(i, t["end_time"]) for i, t in enumerate(tasks) if t.get("end_time") is not None]
+
+    start_time = min(s for _, s in indexed_starts) if indexed_starts else None
+    end_time = max(e for _, e in indexed_ends) if indexed_ends else None
+
+    start_idx = min(indexed_starts, key=lambda x: x[1])[0] if indexed_starts else None
+    end_idx = max(indexed_ends, key=lambda x: x[1])[0] if indexed_ends else None
+
+    total_duration = sum(t.get("duration_days", 0) or 0 for t in tasks)
+
+    worker_set = set()
+    for t in tasks:
+        workers = t.get("workers") or {}
+        for _, names in workers.items():
+            if isinstance(names, list):
+                for name in names:
+                    worker_set.add(name)
+
+    by_equipment = {}
+    for t in tasks:
+        eq_name = t.get("equipment_name") or t.get("equipment_id") or "未知"
+        by_equipment[eq_name] = by_equipment.get(eq_name, 0) + 1
+
+    return {
+        "total_tasks": len(tasks),
+        "total_duration_days": round(total_duration, 2),
+        "start_time": start_time,
+        "end_time": end_time,
+        "start_time_formatted": tasks[start_idx]["start_time_formatted"] if start_idx is not None else None,
+        "end_time_formatted": tasks[end_idx]["end_time_formatted"] if end_idx is not None else None,
+        "worker_count": len(worker_set),
+        "workers": sorted(worker_set),
+        "by_equipment": by_equipment,
+    }
+
+
+def _compute_task_diff(tasks1, tasks2):
+    """计算任务级差异
+
+    按 (equipment_id, process_id) 对齐两个方案的任务，标记差异类型：
+    - added: 方案2有但方案1没有
+    - removed: 方案1有但方案2没有
+    - changed: 两方案都有但有字段差异（时间/工人/工期）
+    - unchanged: 完全相同
+    """
+    map1 = {(t.get("equipment_id"), t.get("process_id")): t for t in tasks1}
+    map2 = {(t.get("equipment_id"), t.get("process_id")): t for t in tasks2}
+
+    all_keys = set(map1.keys()) | set(map2.keys())
+
+    diff_list = []
+    for key in sorted(all_keys, key=lambda k: (str(k[0]), str(k[1]))):
+        t1 = map1.get(key)
+        t2 = map2.get(key)
+
+        if t1 and not t2:
+            diff_list.append({
+                "key": list(key),
+                "status": "removed",
+                "task1": t1,
+                "task2": None,
+                "changes": ["方案1独有"],
+            })
+        elif t2 and not t1:
+            diff_list.append({
+                "key": list(key),
+                "status": "added",
+                "task1": None,
+                "task2": t2,
+                "changes": ["方案2独有"],
+            })
+        else:
+            changes = []
+            if t1.get("start_time") != t2.get("start_time") or t1.get("end_time") != t2.get("end_time"):
+                changes.append("时间变化")
+            w1 = t1.get("workers") or {}
+            w2 = t2.get("workers") or {}
+            if w1 != w2:
+                changes.append("工人变化")
+            if t1.get("duration_days") != t2.get("duration_days"):
+                changes.append("工期变化")
+
+            diff_list.append({
+                "key": list(key),
+                "status": "changed" if changes else "unchanged",
+                "task1": t1,
+                "task2": t2,
+                "changes": changes,
+            })
+
+    summary = {
+        "total": len(diff_list),
+        "added": sum(1 for d in diff_list if d["status"] == "added"),
+        "removed": sum(1 for d in diff_list if d["status"] == "removed"),
+        "changed": sum(1 for d in diff_list if d["status"] == "changed"),
+        "unchanged": sum(1 for d in diff_list if d["status"] == "unchanged"),
+    }
+
+    return {
+        "summary": summary,
+        "items": diff_list,
+    }
+
+
+# ======================== 切换生效方案 ========================
+
+@workorder_mgmt_bp.route("/schedule-plans/<int:schedule_plan_id>/activate", methods=["PUT"])
+def activate_schedule_plan(schedule_plan_id):
+    """将指定调度方案设为生效
+
+    - 将该方案 status 改为 '生效中'
+    - 同 plan_id 下其他方案改为 '已归档'
+    - 更新 maintenance_plans.schedule_plan_id 指向该方案
+    """
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+
+            c.execute(
+                "SELECT id, plan_id, schedule_name FROM schedule_plans WHERE id = ?",
+                (schedule_plan_id,),
+            )
+            plan = c.fetchone()
+            if not plan:
+                return jsonify({"success": False, "message": "调度方案不存在"}), 404
+
+            plan_id = plan["plan_id"]
+            schedule_name = plan["schedule_name"]
+
+            if not plan_id:
+                return jsonify({"success": False, "message": "该方案未关联检修计划，无法切换生效"}), 400
+
+            # 同计划下其他生效方案改为已归档
+            c.execute(
+                "UPDATE schedule_plans SET status = '已归档' WHERE plan_id = ? AND id != ? AND status = '生效中'",
+                (plan_id, schedule_plan_id),
+            )
+            # 目标方案设为生效中
+            c.execute(
+                "UPDATE schedule_plans SET status = '生效中' WHERE id = ?",
+                (schedule_plan_id,),
+            )
+            # 更新 maintenance_plans.schedule_plan_id 指向
+            c.execute(
+                "UPDATE maintenance_plans SET schedule_plan_id = ?, updated_at = ? WHERE id = ?",
+                (
+                    str(schedule_plan_id),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    plan_id,
+                ),
+            )
+
+            conn.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"方案「{schedule_name}」已设为生效",
+            "data": {
+                "schedule_plan_id": schedule_plan_id,
+                "plan_id": plan_id,
+                "schedule_name": schedule_name,
+            },
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e), "message": "切换生效方案失败"}), 500

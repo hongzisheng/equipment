@@ -80,7 +80,7 @@
           @mousemove="handleDragMove"
           @mouseup="handleDragEnd"
           @mouseleave="handleDragEnd"
-          @wheel.prevent="handleWheel"
+          @wheel="handleWheel"
         >
           <div v-if="!loading && categoryNodes.length === 0" class="empty-state">
             <el-empty v-if="!backendConnected" description="后端服务未连接">
@@ -534,6 +534,13 @@ const updateLayout = (onComplete) => {
 watch(collapsedNodeIds, () => updateLayout(), { deep: false })
 watch(categoryNodes, () => updateLayout(), { deep: false })
 
+// 节点数据就绪后自动居中根节点
+watch(layoutNodes, (nodes) => {
+  if (nodes.length > 0 && treeStageRef.value) {
+    nextTick(() => centerOnRootNode())
+  }
+})
+
 // ---------- 节点样式 ----------
 function nodeBgColor(node) {
   if (!node) return '#ffffff'
@@ -817,14 +824,19 @@ function fitToView() {
   const rootNode = nodes.find(n => n.depth === 0) || nodes[0]
   if (!rootNode) return
 
-  // 使根节点精确居中（与定位按钮一致）
-  viewX.value = rootNode.y - (svgWidth.value / 2) / scale
-  viewY.value = rootNode.x - (svgHeight.value / 2) / scale
+  // 适配画布后根节点从左边 180px 位置显示
+  viewX.value = 180 / scale - rootNode.y
+  viewY.value = (svgHeight.value / 2) / scale - rootNode.x - 80
 }
 
 // ---------- 定位根节点（无偏移，精确居中） ----------
 function centerOnRootNode() {
-  if (viewMode.value === 'list') return
+  if (viewMode.value === 'list') {
+    // 列表视图：选中根节点并滚动到顶部
+    treeRef.value?.setCurrentKey('root')
+    listContainerRef.value?.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
 
   const rootNode = layoutNodes.value.find(n => n.depth === 0) || layoutNodes.value[0]
   if (!rootNode || !treeStageRef.value) return
@@ -834,8 +846,8 @@ function centerOnRootNode() {
   svgHeight.value = treeStageRef.value.clientHeight
 
   const scale = zoomScaleValue.value || 1
-  viewX.value = (svgWidth.value / 2) / scale - rootNode.y
-  viewY.value = (svgHeight.value / 2) / scale - rootNode.x
+  viewX.value = 180 / scale - rootNode.y
+  viewY.value = (svgHeight.value / 2) / scale - rootNode.x - 80
 }
 
 // ---------- 导出 ----------

@@ -151,12 +151,10 @@
           <el-row :gutter="24">
             <el-col :span="12">
               <el-form-item label="计划成本(元)">
-                <el-input-number
-                  v-model="form.planned_cost"
-                  :min="0"
-                  :step="100"
-                  :precision="2"
-                  placeholder="计划成本"
+                <el-input
+                  :value="totalPlannedCost"
+                  readonly
+                  placeholder="选择工单后自动计算"
                   style="width: 100%"
                 />
               </el-form-item>
@@ -312,6 +310,12 @@ const totalPlannedManHours = computed(() => {
   }, 0).toFixed(1)
 })
 
+const totalPlannedCost = computed(() => {
+  return selectedWorkOrders.value.reduce((sum, wo) => {
+    return sum + (wo.estimated_cost || 0)
+  }, 0).toFixed(2)
+})
+
 const autoPlannedStartTime = computed(() => {
   if (selectedWorkOrders.value.length === 0) return ''
   const times = selectedWorkOrders.value
@@ -390,6 +394,8 @@ const handleSubmit = async () => {
   try {
     const workOrderIds = selectedWorkOrders.value.map((wo) => wo.id)
     const payload = { ...form }
+    payload.planned_cost = parseFloat(totalPlannedCost.value) || 0
+    payload.planned_man_hours = parseFloat(totalPlannedManHours.value) || 0
     if (isEdit.value) {
       payload.work_order_ids = workOrderIds
       await updateMaintenancePlan(planId.value, payload)

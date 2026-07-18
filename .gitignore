@@ -224,8 +224,13 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
-db.sqlite3
+
+# SQLite 数据库备份文件（不纳入版本控制，避免大文件污染仓库）
+*.sqlite3.backup*
+*.backup_*
 db.sqlite3-journal
+# 迁移源数据库（仅用于一次性数据迁移，不需要推送）
+db(5).sqlite3
 
 # Flask stuff:
 instance/

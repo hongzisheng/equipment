@@ -253,6 +253,14 @@ def delete_file(file_id):
     return jsonify({'success': True, 'message': '删除成功'})
 
 
+@file_bp.route('/files/scan-disk', methods=['POST'])
+def scan_disk():
+    """扫描磁盘上的文件，补齐数据库中缺失的记录"""
+    from .sync_files_to_db import scan_and_sync
+    result = scan_and_sync()
+    return jsonify(result)
+
+
 @file_bp.route('/files', methods=['GET'])
 def list_files():
     category = request.args.get('category')  # 可选筛选

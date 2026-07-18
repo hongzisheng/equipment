@@ -32,7 +32,7 @@ def login():
     # 查询数据库 users 表
     with get_db_connection(sqlite3.Row) as conn:
         row = conn.execute(
-            "SELECT id, username, password, real_name, role FROM users WHERE username = ?",
+            "SELECT id, username, password, real_name, role, emp_id FROM users WHERE username = ?",
             (username,),
         ).fetchone()
 
@@ -51,6 +51,7 @@ def login():
         "username": row["username"],
         "role": row["role"],
         "avatar": "",
+        "emp_id": row["emp_id"] or "",
     }
 
     return Result.success(message="登录成功", data={"token": token})

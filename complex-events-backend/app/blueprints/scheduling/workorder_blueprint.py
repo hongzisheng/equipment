@@ -5,10 +5,12 @@
 """
 import datetime
 import json
+import os
 import sqlite3
 import traceback
+import uuid
 
-from flask import jsonify, request
+from flask import jsonify, request, send_from_directory, current_app
 
 from . import workorder_mgmt_bp
 from app.models import Result
@@ -475,26 +477,39 @@ def assign_workers_from_schedule():
         ), 500
 
 
-# 状态机定义
+# 状态机定义（统一标准，与 process_blueprint 一致）
 _STATE_ORDER = [
-    "released",
-    "apply_for_start",
-    "eng_approved",
-    "construction_confirmed",
-    "team_received",
-    "construction_signed",
-    "process_closed",
-    "equipment_closed",
+    "released",                 # 0: 待开始
+    "pending_engineer",         # 1: 等待工程师确认
+    "pending_construction",     # 2: 等待施工确认
+    "pending_team",             # 3: 等待班组受理
+    "pending_sign",             # 4: 等待施工回签
+    "submitted",                # 5: 已提交（工人提交后）
+    "pending_process_close",    # 6: 等待工艺存储关闭
+    "pending_equipment_close",  # 7: 等待设备部关闭
+    "completed",                # 8: 已完成
 ]
 
 _STATUS_TRANSITIONS = {
-    "released":               {"apply_for_start": ["worker"]},
-    "apply_for_start":        {"eng_approved": ["admin"]},
-    "eng_approved":           {"construction_confirmed": ["admin"]},
-    "construction_confirmed": {"team_received": ["admin"]},
-    "team_received":          {"construction_signed": ["worker"]},
-    "construction_signed":    {"process_closed": ["admin"]},
-    "process_closed":         {"equipment_closed": ["admin"]},
+    "released":                 {"pending_engineer": ["worker"]},
+    "pending_engineer":         {"pending_construction": ["admin"]},
+    "pending_construction":     {"pending_team": ["admin"]},
+    "pending_team":             {"pending_sign": ["admin"]},
+    "pending_sign":             {"submitted": ["worker"]},
+    "submitted":                {"pending_process_close": ["admin"]},
+    "pending_process_close":    {"pending_equipment_close": ["admin"]},
+    "pending_equipment_close":  {"completed": ["admin"]},
+}
+
+# 驳回映射（与 process_blueprint 一致）
+_REJECT_TARGET = {
+    "pending_engineer":         "released",
+    "pending_construction":     "pending_engineer",
+    "pending_team":             "pending_construction",
+    "pending_sign":             "pending_team",
+    "submitted":                "pending_team",          # 已提交驳回 → 等待班组受理
+    "pending_process_close":    "pending_sign",
+    "pending_equipment_close":  "pending_process_close",
 }
 
 
@@ -514,7 +529,7 @@ def update_work_order_task_status(task_id):
                 return jsonify({"success": False, "message": "工单任务不存在"}), 404
 
             current_status = row[0]
-            if current_status in ("equipment_closed", "cancelled"):
+            if current_status in ("completed", "cancelled"):
                 return jsonify({"success": False, "message": "任务已关闭，不可修改"}), 400
 
             if action == "confirm":
@@ -526,15 +541,11 @@ def update_work_order_task_status(task_id):
                     ), 400
                 target_status = next_statuses[0]
             else:  # reject / 驳回
-                try:
-                    idx = _STATE_ORDER.index(current_status)
-                except ValueError:
+                target_status = _REJECT_TARGET.get(current_status)
+                if target_status is None:
                     return jsonify(
-                        {"success": False, "message": f"未知状态: {current_status}"}
+                        {"success": False, "message": f"当前状态「{current_status}」不可驳回"}
                     ), 400
-                if idx == 0:
-                    return jsonify({"success": False, "message": "已是初始状态，无法驳回"}), 400
-                target_status = _STATE_ORDER[idx - 1]
 
             update_fields = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
             update_values = [target_status]
@@ -548,6 +559,16 @@ def update_work_order_task_status(task_id):
             c.execute(
                 f"UPDATE work_order_tasks SET {', '.join(update_fields)} WHERE id = ?",
                 update_values,
+            )
+            conn.commit()
+
+            # 写入操作日志
+            operation_type = "approval_confirm" if action == "confirm" else "approval_reject"
+            c.execute(
+                """INSERT INTO task_operation_logs
+                   (task_id, operation_type, old_status, new_status, approval_comments)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (task_id, operation_type, current_status, target_status, approval_comments),
             )
             conn.commit()
             return jsonify(
@@ -646,3 +667,85 @@ def get_schedule_tasks():
         return jsonify(
             {"success": False, "error": str(e), "message": "获取调度任务失败"}
         ), 500
+
+
+# ──────────────────────────────────────────────
+#  操作日志查询
+# ──────────────────────────────────────────────
+
+@workorder_mgmt_bp.route("/work-order-tasks/<int:task_id>/logs", methods=["GET"])
+def get_task_operation_logs(task_id):
+    """获取指定工单任务的操作日志"""
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT id, task_id, user_id, operation_type,
+                       description, attachment_path,
+                       old_status, new_status, approval_comments, created_at
+                FROM task_operation_logs
+                WHERE task_id = ?
+                ORDER BY created_at DESC
+                """,
+                (task_id,),
+            )
+            rows = c.fetchall()
+            data = [dict(r) for r in rows]
+            return jsonify({"success": True, "data": data})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"查询操作日志失败: {str(e)}"}), 500
+
+
+# ──────────────────────────────────────────────
+#  图片上传 & 静态文件服务
+# ──────────────────────────────────────────────
+
+@workorder_mgmt_bp.route("/work-order-tasks/<int:task_id>/upload-image", methods=["POST"])
+def upload_task_image(task_id):
+    """为工单任务上传图片附件"""
+    uploaded_file = request.files.get("image")
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({"success": False, "message": "未选择文件"}), 400
+
+    # 仅允许图片格式
+    allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+    ext = os.path.splitext(uploaded_file.filename)[1].lower()
+    if ext not in allowed_exts:
+        return jsonify({"success": False, "message": f"不支持的图片格式: {ext}"}), 400
+
+    # 保存到 process_images 目录
+    upload_dir = os.path.join(current_app.root_path, "..", "assets", "process_images")
+    os.makedirs(upload_dir, exist_ok=True)
+    saved_name = f"{uuid.uuid4().hex}{ext}"
+    saved_path = os.path.join(upload_dir, saved_name)
+    uploaded_file.save(saved_path)
+
+    # 相对于 /api 前缀的访问路径
+    relative_path = f"/api/uploads/process_images/{saved_name}"
+
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "UPDATE work_order_tasks SET attachment_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (relative_path, task_id),
+            )
+            conn.commit()
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"更新数据库失败: {str(e)}"}), 500
+
+    return jsonify({
+        "success": True,
+        "message": "图片上传成功",
+        "data": {"attachment_path": relative_path},
+    })
+
+
+@workorder_mgmt_bp.route("/uploads/process_images/<path:filename>", methods=["GET"])
+def serve_process_image(filename):
+    """提供 process_images 下的静态图片"""
+    upload_dir = os.path.join(current_app.root_path, "..", "assets", "process_images")
+    return send_from_directory(upload_dir, filename)

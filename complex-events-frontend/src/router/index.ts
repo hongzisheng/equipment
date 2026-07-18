@@ -262,9 +262,25 @@ export const constantRoutes: RouteItem[] = [
   },
   {
     path: '/employee',
-    component: () => import('@/views/empty/index.vue'),
+    component: () => import('@/views/employee/EmployeeLayout.vue'),
+    redirect: '/employee/schedule',
     name: '员工端',
-    meta: { title: '员工端' },
+    meta: { title: '员工端', role: 'worker' },
+    hidden: true,
+    children: [
+      {
+        path: 'schedule',
+        name: 'StaffSchedule',
+        component: () => import('@/views/employee/Schedule.vue'),
+        meta: { title: '我的排程', role: 'worker' },
+      },
+      {
+        path: 'work-report',
+        name: 'StaffWorkReport',
+        component: () => import('@/views/employee/WorkReport.vue'),
+        meta: { title: '工况反馈', role: 'worker' },
+      },
+    ],
   },
   {
     path: '/:pathMatch(.*)*',
@@ -299,19 +315,37 @@ router.beforeEach(async (to, from, next) => {
       next()
       NProgress.done()
       return
-    } else if (userStore.name) {
-      next()
-    } else {
+    }
+    // 确保用户信息已加载
+    if (!userStore.name) {
       try {
         await userStore.getInfo()
-        next()
       } catch (error) {
         await userStore.resetToken()
         console.error('error', error)
         next(`/login?redirect=${to.path}`)
         NProgress.done()
+        return
       }
     }
+    // 角色权限守卫
+    const isWorker = userStore.role === 'worker'
+    const isAdmin = userStore.role === 'admin'
+    const isEmployeePath = to.path.startsWith('/employee')
+
+    if (isWorker && !isEmployeePath) {
+      // 员工只能访问员工端
+      next('/employee/schedule')
+      NProgress.done()
+      return
+    }
+    if (isAdmin && isEmployeePath) {
+      // 管理员不能访问员工端
+      next('/home')
+      NProgress.done()
+      return
+    }
+    next()
   } else if (whiteList.includes(to.path)) {
     next()
   } else {

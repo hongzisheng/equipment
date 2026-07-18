@@ -31,7 +31,7 @@ REJECT_TARGET = {
     "pending_construction": "pending_engineer",      # → 等待工程师确认
     "pending_team": "pending_construction",          # → 等待施工确认
     "pending_sign": "pending_team",                  # → 等待班组受理
-    "submitted": "pending_sign",                     # → 等待施工回签
+    "submitted": "pending_team",                     # → 等待班组受理
     "pending_process_close": "pending_sign",         # → 等待施工回签（跳过已提交）
     "pending_equipment_close": "pending_process_close",  # → 等待工艺存储关闭
 }

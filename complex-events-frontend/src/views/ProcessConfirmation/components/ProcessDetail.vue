@@ -61,20 +61,62 @@
         <div class="description">{{ process.description }}</div>
       </div>
 
-      <div v-if="process.attachment_path" class="detail-section">
+      <div class="detail-section">
         <h4>上传图片</h4>
-        <div class="image-preview">
+        <!-- 已有图片预览 -->
+        <div v-if="process.attachment_path" class="image-preview">
           <el-image
-            :src="'http://localhost:5000' + process.attachment_path"
+            :src="process.attachment_path"
             fit="contain"
-            :preview-src-list="['http://localhost:5000' + process.attachment_path]"
+            :preview-src-list="[process.attachment_path]"
             class="preview-image"
           />
         </div>
+        <!-- 上传中状态 -->
+        <div v-if="uploading" class="upload-loading">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          上传中...
+        </div>
+        <!-- 上传区域 -->
+        <div
+          v-if="!uploading"
+          class="upload-trigger"
+          @click="triggerUpload"
+        >
+          <el-icon><Plus /></el-icon>
+          <span>{{ process.attachment_path ? '更换图片' : '点击上传图片' }}</span>
+        </div>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".jpg,.jpeg,.png,.gif,.bmp,.webp"
+          style="display: none"
+          @change="handleUpload"
+        />
       </div>
-      <div v-else class="detail-section">
-        <h4>上传图片</h4>
-        <div class="no-image">暂无图片</div>
+
+      <!-- 操作日志 -->
+      <div class="detail-section">
+        <h4>操作日志</h4>
+        <div v-if="logsLoading" class="log-loading">加载中...</div>
+        <div v-else-if="operationLogs.length === 0" class="log-empty">暂无操作记录</div>
+        <div v-else class="log-list">
+          <div v-for="log in operationLogs" :key="log.id" class="log-item">
+            <div class="log-header">
+              <span :class="['log-type-tag', getLogTypeClass(log.operation_type)]">
+                {{ getOperationTypeLabel(log.operation_type) }}
+              </span>
+              <span class="log-status-flow">
+                <span class="log-status">{{ getStatusShortLabel(log.old_status) }}</span>
+                <span class="log-arrow">→</span>
+                <span class="log-status">{{ getStatusShortLabel(log.new_status) }}</span>
+              </span>
+              <span class="log-time">{{ log.created_at }}</span>
+            </div>
+            <div v-if="log.approval_comments" class="log-comment">{{ log.approval_comments }}</div>
+            <div v-if="log.description" class="log-comment">{{ log.description }}</div>
+          </div>
+        </div>
       </div>
 
       <div v-if="process.material_requirements && Object.keys(process.material_requirements).length > 0" class="detail-section">
@@ -157,12 +199,13 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Checked, Close } from '@element-plus/icons-vue'
+import { Checked, Close, Plus, Loading } from '@element-plus/icons-vue'
 import ProcessStatusTag from './ProcessStatusTag.vue'
 import ProcessTimeline from './ProcessTimeline.vue'
 import { formatTime, formatWorkers, getOpinionPlaceholder, TERMINAL_STATUSES, NON_REJECTABLE_STATUSES, TASK_STATUS } from '../utils'
+import request from '@/utils/request'
 
 const props = defineProps({
   visible: {
@@ -179,11 +222,90 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['close', 'confirm', 'reject', 'view-node'])
+const emit = defineEmits(['close', 'confirm', 'reject', 'view-node', 'image-uploaded'])
 
 const opinionText = ref('')
 const confirmLoading = ref(false)
 const rejectLoading = ref(false)
+const uploading = ref(false)
+const fileInputRef = ref(null)
+
+// 操作日志
+const operationLogs = ref([])
+const logsLoading = ref(false)
+
+const OPERATION_TYPE_MAP = {
+  'confirm': '确认通过',
+  'reject': '驳回',
+  'cancel': '取消',
+  'approval_confirm': '确认通过',
+  'approval_reject': '驳回',
+  'approval_approved': '审批通过',
+  'approval_rejected': '审批驳回',
+  'status_update': '状态变更',
+  'upload_photo': '上传图片',
+}
+
+const STATUS_SHORT_MAP = {
+  'released': '待开始',
+  'pending_engineer': '待工程师确认',
+  'pending_construction': '待施工确认',
+  'pending_team': '待班组受理',
+  'pending_sign': '待施工回签',
+  'submitted': '已提交',
+  'pending_process_close': '待工艺关闭',
+  'pending_equipment_close': '待设备部关闭',
+  'completed': '已完成',
+  'cancelled': '已取消',
+  'apply_for_start': '申请开工',
+  'eng_approved': '工程师确认',
+  'construction_confirmed': '施工确认',
+  'team_received': '班组受理',
+  'construction_signed': '施工回签',
+  'process_closed': '工艺关闭',
+  'equipment_closed': '设备部关闭',
+  'in_progress': '进行中',
+  'pending': '待开始',
+  'rejected': '已驳回',
+}
+
+function getOperationTypeLabel(type) {
+  return OPERATION_TYPE_MAP[type] || type
+}
+
+function getLogTypeClass(type) {
+  if (!type) return 'tag-default'
+  if (type.includes('confirm') || type.includes('approved')) return 'tag-confirm'
+  if (type.includes('reject') || type.includes('rejected')) return 'tag-reject'
+  if (type.includes('cancel')) return 'tag-cancel'
+  if (type.includes('upload')) return 'tag-upload'
+  if (type.includes('status')) return 'tag-status'
+  return 'tag-default'
+}
+
+function getStatusShortLabel(status) {
+  return STATUS_SHORT_MAP[status] || status || '--'
+}
+
+async function fetchOperationLogs() {
+  if (!props.process?.id) return
+  logsLoading.value = true
+  try {
+    const res = await request.get(`/api/work-order-tasks/${props.process.id}/logs`)
+    operationLogs.value = res.success ? res.data : []
+  } catch (e) {
+    operationLogs.value = []
+  } finally {
+    logsLoading.value = false
+  }
+}
+
+// 弹窗打开时自动加载日志
+watch(() => props.visible, (visible) => {
+  if (visible && props.process?.id) {
+    fetchOperationLogs()
+  }
+})
 
 // 管理员不可操作的状态：终态 + 待开始（工人动作） + 等待施工回签（工人动作）
 const ADMIN_NON_OPERABLE = new Set([
@@ -253,6 +375,55 @@ function handleReject() {
   }).catch(() => {
     rejectLoading.value = false
   })
+}
+
+function triggerUpload() {
+  fileInputRef.value && fileInputRef.value.click()
+}
+
+async function handleUpload(event) {
+  const file = event.target.files[0]
+  if (!file) return
+
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp']
+  if (!allowedTypes.includes(file.type)) {
+    ElMessage.error('请上传图片文件（jpg/png/gif/bmp/webp）')
+    event.target.value = ''
+    return
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.error('图片大小不能超过 10MB')
+    event.target.value = ''
+    return
+  }
+
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('image', file)
+
+    const response = await request.post(
+      `/api/work-order-tasks/${props.process.id}/upload-image`,
+      formData
+    )
+
+    if (response.success) {
+      props.process.attachment_path = response.data.attachment_path
+      ElMessage.success('图片上传成功')
+      emit('image-uploaded', {
+        processId: props.process.id,
+        attachmentPath: response.data.attachment_path,
+      })
+    } else {
+      ElMessage.error(response.message || '上传失败')
+    }
+  } catch (error) {
+    console.error('上传图片失败:', error)
+    ElMessage.error('上传失败，请稍后重试')
+  } finally {
+    uploading.value = false
+    event.target.value = ''
+  }
 }
 </script>
 
@@ -350,6 +521,7 @@ function handleReject() {
   border-radius: 6px;
   padding: 12px;
   border: 1px solid #e4edf2;
+  margin-bottom: 10px;
 }
 
 .preview-image {
@@ -357,6 +529,132 @@ function handleReject() {
   max-height: 300px;
   object-fit: contain;
   border-radius: 4px;
+}
+
+.upload-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  background: #f8fbfd;
+  border-radius: 6px;
+  border: 1px dashed #d9e2e9;
+  color: #409eff;
+  font-size: 13px;
+}
+
+.upload-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  background: #f8fbfd;
+  border-radius: 6px;
+  border: 2px dashed #c0cdd9;
+  color: #6b859c;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.upload-trigger:hover {
+  border-color: #409eff;
+  color: #409eff;
+  background: #f0f7ff;
+}
+
+/* 操作日志 */
+.log-loading {
+  text-align: center;
+  color: #99aab9;
+  padding: 16px;
+  font-size: 13px;
+}
+
+.log-empty {
+  text-align: center;
+  color: #99aab9;
+  padding: 16px;
+  background: #f8fbfd;
+  border-radius: 6px;
+  border: 1px dashed #d9e2e9;
+  font-size: 13px;
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.log-item {
+  background: #f8fbfd;
+  border: 1px solid #e4edf2;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.log-type-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tag-confirm { background: #d4edda; color: #155724; }
+.tag-reject  { background: #fff3cd; color: #856404; }
+.tag-cancel  { background: #e2e3e5; color: #383d41; }
+.tag-upload  { background: #e6e6fa; color: #4b0082; }
+.tag-status  { background: #cce5ff; color: #004085; }
+.tag-default { background: #f0f3f7; color: #5a6c7e; }
+
+.log-status-flow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #4f6f8f;
+}
+
+.log-status {
+  background: #eef2f6;
+  padding: 1px 8px;
+  border-radius: 4px;
+  color: #1e3747;
+  font-weight: 500;
+}
+
+.log-arrow {
+  color: #99aab9;
+  font-weight: 600;
+}
+
+.log-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: #99aab9;
+}
+
+.log-comment {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-radius: 4px;
+  border-left: 3px solid #409eff;
+  font-size: 12px;
+  color: #4a5e71;
+  line-height: 1.5;
 }
 
 .no-image {

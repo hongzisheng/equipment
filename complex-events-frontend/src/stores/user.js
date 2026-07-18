@@ -9,6 +9,7 @@ const getDefaultState = () => {
     token: getToken(),
     name: '',
     avatar: '',
+    role: '',
   }
 }
 
@@ -19,6 +20,7 @@ export const useUserStore = defineStore(
     const token = ref(getToken())
     const name = ref('')
     const avatar = ref('')
+    const role = ref('')
 
     // actions
     function resetState() {
@@ -26,6 +28,7 @@ export const useUserStore = defineStore(
       token.value = defaultState.token
       name.value = defaultState.name
       avatar.value = defaultState.avatar
+      role.value = defaultState.role
     }
 
     function setTokenAction(tokenValue) {
@@ -38,6 +41,10 @@ export const useUserStore = defineStore(
 
     function setAvatar(avatarValue) {
       avatar.value = avatarValue
+    }
+
+    function setRole(roleValue) {
+      role.value = roleValue
     }
 
     // user login
@@ -68,10 +75,11 @@ export const useUserStore = defineStore(
               reject('Verification failed, please Login again.')
             }
 
-            const { name: userName, avatar: userAvatar } = data
+            const { name: userName, avatar: userAvatar, role: userRole } = data
 
             setName(userName)
             setAvatar(userAvatar)
+            setRole(userRole || '')
             resolve(data)
           })
           .catch((error) => {
@@ -107,11 +115,13 @@ export const useUserStore = defineStore(
     const nameGetter = computed(() => name.value)
     const avatarGetter = computed(() => avatar.value)
     const tokenGetter = computed(() => token.value)
+    const roleGetter = computed(() => role.value)
     return {
       // getter
       token: tokenGetter,
       name: nameGetter,
       avatar: avatarGetter,
+      role: roleGetter,
 
       // actions
       login,

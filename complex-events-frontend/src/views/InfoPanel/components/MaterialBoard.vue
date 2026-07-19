@@ -34,21 +34,67 @@
               <div v-for="(material, index) in allMaterials" :key="index" class="single-chart">
                 <div class="material-label">{{ material.name }}</div>
                 <div class="chart-wrapper">
-                  <el-progress
-                    type="circle"
-                    :percentage="Math.round((material.used / material.stock) * 100)"
-                    :color="getPieChartColor(material)"
-                    :width="80"
-                    :stroke-width="8"
-                  >
-                    <template #default="{ percentage }">
-                      <span class="percentage-text">{{ percentage }}%</span>
-                    </template>
-                  </el-progress>
+                  <svg class="stock-circle" viewBox="0 0 100 100">
+                    <circle
+                      class="circle-bg"
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#E2E8F0"
+                      stroke-width="8"
+                    />
+                    <circle
+                      v-if="material.greenPercentage > 0"
+                      class="circle-green"
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#10B981"
+                      stroke-width="8"
+                      :stroke-dasharray="material.greenDasharray"
+                      :stroke-dashoffset="material.greenDashoffset"
+                      stroke-linecap="round"
+                      transform="rotate(-90 50 50)"
+                    />
+                    <circle
+                      v-if="material.yellowPercentage > 0"
+                      class="circle-yellow"
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#EAB308"
+                      stroke-width="8"
+                      :stroke-dasharray="material.yellowDasharray"
+                      :stroke-dashoffset="material.yellowDashoffset"
+                      stroke-linecap="round"
+                      transform="rotate(-90 50 50)"
+                    />
+                    <circle
+                      v-if="material.redPercentage > 0"
+                      class="circle-red"
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#EF4444"
+                      stroke-width="8"
+                      :stroke-dasharray="material.redDasharray"
+                      :stroke-dashoffset="material.redDashoffset"
+                      stroke-linecap="round"
+                      transform="rotate(-90 50 50)"
+                    />
+                  </svg>
+                  <div class="stock-center">
+                    <span class="stock-number">{{ material.stock }}</span>
+                    <span class="stock-unit">{{ material.unit }}</span>
+                  </div>
                 </div>
                 <div class="stock-info">
-                  <span>库存: {{ material.stock }}{{ material.unit || '' }}</span>
-                  <span>已用: {{ formatNumber(material.used) }}{{ material.unit || '' }}</span>
+                  <span class="plan-usage">计划使用: {{ material.planUsage }}{{ material.unit || '' }}</span>
+                  <span class="actual-usage">已使用: {{ material.actualUsage }}{{ material.unit || '' }}</span>
                 </div>
               </div>
             </div>
@@ -61,7 +107,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { getPieChartColor, formatNumber, getMaterialCategory } from '../utils'
+import { getMaterialCategory } from '../utils'
 
 const props = defineProps({
   materials: {
@@ -81,10 +127,41 @@ const formattedMaterials = computed(() => {
 
   props.materials.forEach(material => {
     const category = getMaterialCategory(material.material_name)
+    const stock = material.initial_stock || 0
+    const planUsage = material.plan_usage || 0
+    const actualUsage = material.actual_usage || 0
+
+    const CIRCUMFERENCE = 2 * Math.PI * 42
+    
+    let redPercentage = 0
+    let yellowPercentage = 0
+    let greenPercentage = 0
+    
+    if (stock > 0) {
+      redPercentage = Math.min(Math.round((actualUsage / stock) * 100), 100)
+      const planPercentage = Math.min(Math.round((planUsage / stock) * 100), 100)
+      yellowPercentage = Math.max(0, planPercentage - redPercentage)
+      greenPercentage = Math.max(0, 100 - planPercentage)
+    }
+    
+    const redLength = (redPercentage / 100) * CIRCUMFERENCE
+    const yellowLength = (yellowPercentage / 100) * CIRCUMFERENCE
+    const greenLength = (greenPercentage / 100) * CIRCUMFERENCE
+    
     groupedMaterials[category].push({
       name: material.material_name,
-      stock: material.initial_stock,
-      used: material.initial_stock - material.current_stock,
+      stock: stock,
+      planUsage: planUsage,
+      actualUsage: actualUsage,
+      redPercentage: redPercentage,
+      yellowPercentage: yellowPercentage,
+      greenPercentage: greenPercentage,
+      redDasharray: `${redLength} ${CIRCUMFERENCE}`,
+      redDashoffset: 0,
+      yellowDasharray: `${yellowLength} ${CIRCUMFERENCE}`,
+      yellowDashoffset: -redLength,
+      greenDasharray: `${greenLength} ${CIRCUMFERENCE}`,
+      greenDashoffset: -(redLength + yellowLength),
       unit: material.unit
     })
   })
@@ -111,7 +188,7 @@ const stockStatus = computed(() => {
   const stockData = formattedMaterials.value
   for (const typeKey in stockData) {
     for (const material of stockData[typeKey]) {
-      if (material.used / material.stock >= 0.8) {
+      if (material.actualUsage / material.stock >= 0.8) {
         return 'warning'
       }
     }
@@ -122,9 +199,9 @@ const stockStatus = computed(() => {
 
 <style scoped>
 .material-board-card {
-  flex: 1;
+  flex: 1.2;
   background: white;
-  min-height: 300px;
+  min-height: 400px;
   min-width: 0;
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -208,43 +285,77 @@ const stockStatus = computed(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 120px;
+  width: 150px;
   background: white;
-  padding: 15px 10px;
+  padding: 20px 15px;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .material-label {
-  margin-bottom: 12px;
+  margin-bottom: 15px;
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
   color: #4a5568;
   font-weight: 500;
+  line-height: 1.3;
 }
 
 .chart-wrapper {
   margin: 8px 0;
+  position: relative;
+  width: 100px;
+  height: 100px;
 }
 
-.percentage-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: #4a5568;
+.stock-circle {
+  width: 100%;
+  height: 100%;
+}
+
+.stock-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100px;
+  height: 100px;
+}
+
+.stock-number {
+  font-size: 22px;
+  font-weight: 700;
+  color: #2d3748;
+  line-height: 1;
+}
+
+.stock-unit {
+  font-size: 11px;
+  color: #718096;
+  margin-top: 3px;
 }
 
 .stock-info {
-  margin-top: 12px;
+  margin-top: 15px;
   font-size: 12px;
-  color: #718096;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   text-align: center;
 }
 
-.stock-info span {
-  padding: 2px 0;
+.plan-usage {
+  color: #EAB308;
+  font-weight: 500;
+}
+
+.actual-usage {
+  color: #10B981;
+  font-weight: 500;
 }
 
 :deep(.el-progress-circle) {

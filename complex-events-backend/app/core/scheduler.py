@@ -568,12 +568,58 @@ class Scheduler(IScheduler):
             traceback.print_exc()
             raise
 
+    def schedule_from_maintenance_plan(self, plan_id, algorithm_name="topological"):
+        """根据检修计划ID执行调度（调度该计划关联的所有工单）"""
+        try:
+            db_path = _get_db_path()
+            conn = sqlite3.connect(str(db_path))
+            c = conn.cursor()
+            
+            # 验证检修计划是否存在
+            c.execute("SELECT id, plan_name FROM maintenance_plans WHERE id = ?", (plan_id,))
+            plan = c.fetchone()
+            if not plan:
+                conn.close()
+                return None, None, False, "检修计划不存在"
+            
+            # 查询该计划关联的所有工单ID
+            c.execute("SELECT id FROM work_orders WHERE plan_id = ?", (plan_id,))
+            work_order_ids = [row[0] for row in c.fetchall()]
+            
+            if not work_order_ids:
+                conn.close()
+                return None, None, False, "该检修计划下没有关联的工单"
+            
+            conn.close()
+            
+            # 调用现有的工单调度方法
+            result = self.schedule_from_work_orders(work_order_ids, algorithm_name)
+            
+            # 如果调度成功，更新检修计划的 schedule_plan_id
+            if result and isinstance(result, dict) and result.get("success"):
+                conn = sqlite3.connect(str(db_path))
+                c = conn.cursor()
+                import time
+                schedule_plan_id = int(time.time())
+                c.execute(
+                    "UPDATE maintenance_plans SET schedule_plan_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (schedule_plan_id, plan_id)
+                )
+                conn.commit()
+                conn.close()
+                result["schedule_plan_id"] = schedule_plan_id
+                result["plan_id"] = plan_id
+            
+            return result
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return None, None, False, f"调度失败: {str(e)}"
+        
+        
     def _save_schedule_tasks_to_db(self, formatted_plan, schedule_plan_id=None):
-        """将调度结果写入 schedule_tasks 表
-
-        - schedule_plan_id 为 None：保持原覆盖式行为（DELETE 全表后插入），向后兼容旧接口
-        - schedule_plan_id 有值：不删除已有数据，按方案隔离插入，每次保存为新方案
-        """
+        """将调度结果写入 schedule_tasks 表"""
         db_path = _get_db_path()
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()

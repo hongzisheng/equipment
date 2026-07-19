@@ -391,17 +391,11 @@ const pagedWorkers = computed(() => {
 const handleSizeChange = (val) => {
   pageSize.value = val
   currentPage.value = 1
-  nextTick(() => {
-    restoreSelectionOnCurrentPage()
-  })
 }
 
 // 处理当前页变更
 const handleCurrentChange = (val) => {
   currentPage.value = val
-  nextTick(() => {
-    restoreSelectionOnCurrentPage()
-  })
 }
 
 // 处理选中的行变化
@@ -424,28 +418,6 @@ const handleSelectionChange = (selection) => {
   })
   
   selectedWorkers.value = workers.value.filter(worker => selectedWorkerIds.value.has(worker.id))
-}
-// 恢复当前页中已选行的勾选状态（不全选，只恢复 selectedWorkerIds 中已存在的）
-const restoreSelectionOnCurrentPage = () => {
-  if (!workerTableRef.value) return
-  pagedWorkers.value.forEach(row => {
-    if (selectedWorkerIds.value.has(row.id)) {
-      workerTableRef.value.toggleRowSelection(row, true)
-    }
-  })
-}
-
-// 全选所有工人
-const selectAllWorkersGlobally = () => {
-  if (workerTableRef.value && workers.value.length > 0) {
-    workers.value.forEach(row => {
-      selectedWorkerIds.value.add(row.id)
-      if (pagedWorkers.value.some(pageRow => pageRow.id === row.id)) {
-        workerTableRef.value.toggleRowSelection(row, true)
-      }
-    })
-    selectedWorkers.value = workers.value.filter(worker => selectedWorkerIds.value.has(worker.id))
-  }
 }
 
 // 添加工人对话框显示状态

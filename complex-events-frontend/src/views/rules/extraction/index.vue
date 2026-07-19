@@ -192,6 +192,21 @@
 <el-table-column prop="manHours" label="需要的人工(工日)" min-width="160" align="center" />
 <el-table-column prop="laborCost" label="工人费用(元)" min-width="140" align="center" />
 <el-table-column prop="toolCost" label="机具费用(元)" min-width="140" align="center" />
+<el-table-column label="页码" width="70" align="center">
+  <template #default="{ row }">
+    <el-button
+      v-if="row.page && pdfDoc"
+      type="primary"
+      size="small"
+      text
+      @click="goToPage(row.page)"
+    >
+      第{{ row.page }}页
+    </el-button>
+    <span v-else-if="row.page">第{{ row.page }}页</span>
+    <span v-else class="no-page">-</span>
+  </template>
+</el-table-column>
 <el-table-column label="操作" width="110" align="center">
   <template #default="{ row }">
     <el-button type="text" size="small" @click="openEdit(row)">编辑</el-button>
@@ -395,7 +410,8 @@ function normalizeQuotaRow(row) {
     measurementValue: formatQuotaValue(row.measurementValue),
     manHours: formatManHours(row.manHours),
     laborCost: formatAmount(row.laborCost),
-    toolCost: formatAmount(row.toolCost)
+    toolCost: formatAmount(row.toolCost),
+    page: row.page ? Number(row.page) : null
   }
 }
 
@@ -571,6 +587,13 @@ async function renderPage(pageNumber) {
   context.clearRect(0, 0, canvas.width, canvas.height)
 
   await page.render({ canvasContext: context, viewport: viewport }).promise
+}
+
+function goToPage(pageNum) {
+  if (!pdfDoc) return
+  const target = Math.max(1, Math.min(pageNum, totalPages.value))
+  currentPageNum.value = target
+  renderPage(target)
 }
 
 function prevPage() {

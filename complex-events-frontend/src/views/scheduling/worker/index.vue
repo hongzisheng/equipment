@@ -391,17 +391,11 @@ const pagedWorkers = computed(() => {
 const handleSizeChange = (val) => {
   pageSize.value = val
   currentPage.value = 1
-  nextTick(() => {
-    selectAllWorkersGlobally()
-  })
 }
 
 // 处理当前页变更
 const handleCurrentChange = (val) => {
   currentPage.value = val
-  nextTick(() => {
-    selectAllWorkersGlobally()
-  })
 }
 
 // 处理选中的行变化
@@ -424,18 +418,6 @@ const handleSelectionChange = (selection) => {
   })
   
   selectedWorkers.value = workers.value.filter(worker => selectedWorkerIds.value.has(worker.id))
-}
-// 全选所有工人
-const selectAllWorkersGlobally = () => {
-  if (workerTableRef.value && workers.value.length > 0) {
-    workers.value.forEach(row => {
-      selectedWorkerIds.value.add(row.id)
-      if (pagedWorkers.value.some(pageRow => pageRow.id === row.id)) {
-        workerTableRef.value.toggleRowSelection(row, true)
-      }
-    })
-    selectedWorkers.value = workers.value.filter(worker => selectedWorkerIds.value.has(worker.id))
-  }
 }
 
 // 添加工人对话框显示状态
@@ -466,9 +448,6 @@ const fetchWorkers = async () => {
         }
       })
       generateTableColumns(data.data.workers[0])
-      nextTick(() => {
-        selectAllWorkersGlobally()
-      })
     } else {
       loadDefaultWorkers()
     }
@@ -545,10 +524,6 @@ const loadDefaultWorkers = () => {
   })
   
   generateTableColumns(workers.value[0])
-  
-  nextTick(() => {
-    selectAllWorkersGlobally()
-  })
 }
 
 // 根据数据字段动态生成表格列（过滤掉创建时间、emp_id等）

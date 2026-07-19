@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import re
 import time
 import zipfile
 
@@ -55,14 +56,208 @@ def add_cors_headers(response):
     return response
 
 
-def get_markdown_from_zip(zip_url):
+def get_markdown_from_zip(zip_url, page_offset=0):
+    """从 MinerU 返回的 zip 包中提取 markdown，并注入页码标记。
+
+    按优先级尝试三种策略：
+    1. 分页 markdown 文件（1.md, 2.md ...）
+    2. 通过 content_list_v2.json 获取 block 级页码，在 full.md 中注入标记
+    3. 仅使用 full.md（无页码）
+    返回: (markdown_text, page_count)
+    """
     zip_resp = requests.get(zip_url, timeout=120, proxies={"http": None, "https": None})
     zip_resp.raise_for_status()
+
     with zipfile.ZipFile(io.BytesIO(zip_resp.content)) as archive:
-        for name in archive.namelist():
+        namelist = archive.namelist()
+
+        # ---- 策略1：分页 markdown 文件 ----
+        page_files = []
+        for name in namelist:
+            match = re.search(r'(?:^|[\\/])(\d+)\.md$', name, re.IGNORECASE)
+            if match:
+                page_num = int(match.group(1))
+                content = archive.read(name).decode('utf-8', errors='replace')
+                page_files.append((page_num, content))
+
+        if page_files:
+            page_files.sort(key=lambda x: x[0])
+            parts = []
+            for local_page, content in page_files:
+                global_page = page_offset + local_page
+                parts.append(f'<!-- PAGE:{global_page} -->\n\n{content.strip()}')
+            return '\n\n'.join(parts), len(page_files)
+
+        # ---- 策略2：通过 content_list JSON 获取页码 ----
+        full_md = None
+        for name in namelist:
             if name.lower().endswith('full.md'):
-                return archive.read(name).decode('utf-8', errors='replace')
-    return None
+                full_md = archive.read(name).decode('utf-8', errors='replace')
+                break
+
+        if full_md is None:
+            return None, 0
+
+        cl_json = None
+        for cl_name in ['content_list_v2.json', 'content_list.json']:
+            for name in namelist:
+                if name.lower().endswith(cl_name):
+                    try:
+                        cl_json = json.loads(archive.read(name).decode('utf-8'))
+                        break
+                    except Exception:
+                        pass
+            if cl_json is not None:
+                break
+
+        if cl_json is None:
+            # 策略3：兜底 full.md
+            return full_md, 0
+
+        # 展开嵌套
+        if isinstance(cl_json, dict):
+            cl_json = (cl_json.get('data') or cl_json.get('pages')
+                       or cl_json.get('blocks') or cl_json)
+        if not isinstance(cl_json, list):
+            return full_md, 0
+
+        # ---- 从 JSON block 直接渲染 markdown ----
+        def _render_spans(spans, inline=False):
+            if isinstance(spans, str):
+                return spans
+            if isinstance(spans, dict):
+                return _render_spans(spans.get('content', spans.get('text', '')), inline)
+            if not isinstance(spans, list):
+                return str(spans)
+            result = []
+            for s in spans:
+                if isinstance(s, str):
+                    result.append(s)
+                elif isinstance(s, dict):
+                    t = s.get('type', 'text')
+                    c = s.get('content', '')
+                    if isinstance(c, list):
+                        c = _render_spans(c, inline)
+                    elif not isinstance(c, str):
+                        c = str(c)
+                    if t in ('bold', 'strong'):
+                        result.append(f'**{c}**')
+                    elif t in ('italic', 'em'):
+                        result.append(f'*{c}*')
+                    elif t in ('inline_formula', 'inline_math'):
+                        result.append(f'${c}$')
+                    elif t in ('superscript', 'sup'):
+                        result.append(f'^{c}')
+                    elif t in ('subscript', 'sub'):
+                        result.append(f'~{c}~')
+                    elif t in ('strikethrough', 'del'):
+                        result.append(f'~~{c}~~')
+                    elif t in ('code', 'inline_code'):
+                        result.append(f'`{c}`')
+                    elif t == 'link':
+                        url = s.get('url', '')
+                        result.append(f'[{c}]({url})')
+                    else:
+                        result.append(c)
+            return ''.join(result)
+
+        def _render_table(table_data):
+            if not isinstance(table_data, list):
+                return ''
+            rows_html = []
+            for row in table_data:
+                if not isinstance(row, list):
+                    continue
+                cells_html = ''.join(
+                    f'<td>{_render_spans(c, inline=True) if isinstance(c, (dict, list)) else c}</td>'
+                    for c in row
+                )
+                rows_html.append(f'<tr>{cells_html}</tr>')
+            if not rows_html:
+                return ''
+            return f'<table>{"".join(rows_html)}</table>'
+
+        def _render_block(block):
+            if not isinstance(block, dict):
+                return ''
+            btype = block.get('type', '')
+            content = block.get('content')
+            if content is None:
+                return ''
+
+            if isinstance(content, dict):
+                inner = content
+                if 'title_content' in inner:
+                    level = int(inner.get('level', 1))
+                    prefix = '#' * min(level, 6)
+                    return f'{prefix} {_render_spans(inner["title_content"])}'
+                if 'paragraph_content' in inner:
+                    return _render_spans(inner['paragraph_content'])
+                if 'table_content' in inner:
+                    return _render_table(inner['table_content'])
+                if 'image_content' in inner:
+                    img = inner['image_content']
+                    if isinstance(img, dict):
+                        path = img.get('path', img.get('src', img.get('url', '')))
+                        alt = img.get('alt', '')
+                        return f'![{alt}]({path})'
+                    return f'![]({img})'
+                if 'formula_content' in inner:
+                    formula = inner['formula_content']
+                    if isinstance(formula, dict):
+                        latex = formula.get('latex', formula.get('content', str(formula)))
+                    elif isinstance(formula, str):
+                        latex = formula
+                    else:
+                        latex = str(formula)
+                    return f'$$\n{latex}\n$$'
+                if 'list_content' in inner:
+                    items = inner['list_content']
+                    if isinstance(items, list):
+                        lines = [f'- {_render_spans(item) if not isinstance(item, str) else item}' for item in items]
+                        return '\n'.join(lines)
+                    return _render_spans(items)
+                if 'code_content' in inner:
+                    code = inner['code_content']
+                    lang = inner.get('language', '')
+                    text = code if isinstance(code, str) else _render_spans(code)
+                    return f'```{lang}\n{text}\n```'
+                if 'text' in inner:
+                    return inner['text'] if isinstance(inner['text'], str) else _render_spans(inner['text'])
+                for val in inner.values():
+                    if isinstance(val, str) and val.strip():
+                        return val
+                    if isinstance(val, list):
+                        rendered = _render_spans(val)
+                        if rendered.strip():
+                            return rendered
+                return ''
+
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                return _render_spans(content)
+            return str(content)
+
+        # 按页渲染
+        page_parts = []
+        for page_idx, page_items in enumerate(cl_json):
+            local_page = page_idx + 1
+            global_page = page_offset + local_page
+            if not isinstance(page_items, list):
+                continue
+            blocks_md = []
+            for block in page_items:
+                md = _render_block(block)
+                if md and md.strip():
+                    blocks_md.append(md.strip())
+            if blocks_md:
+                page_parts.append(f'<!-- PAGE:{global_page} -->\n\n' + '\n\n'.join(blocks_md))
+
+        if len(page_parts) >= 2:
+            return '\n\n'.join(page_parts), len(page_parts)
+
+        return full_md, 0
 
 
 def build_pdf_chunks(file_bytes, max_pages=MAX_PDF_PAGES):
@@ -79,7 +274,11 @@ def build_pdf_chunks(file_bytes, max_pages=MAX_PDF_PAGES):
     return total_pages, chunks
 
 
-def parse_single_file(file_name, file_bytes):
+def parse_single_file(file_name, file_bytes, page_offset=0):
+    """解析单个文件，返回带偏移页码的 markdown。
+
+    page_offset: 当前文件在原始 PDF 中的起始页码偏移（如第2片 offset=200）。
+    """
     headers = {'Authorization': f'Bearer {TOKEN}', 'Content-Type': 'application/json'}
 
     submit_resp = requests.post(
@@ -120,10 +319,10 @@ def parse_single_file(file_name, file_bytes):
                 markdown_url = item.get('full_zip_url')
                 if not markdown_url:
                     raise RuntimeError('MinerU did not return full_zip_url')
-                markdown = get_markdown_from_zip(markdown_url)
+                markdown, page_count = get_markdown_from_zip(markdown_url, page_offset)
                 if markdown is None:
                     raise RuntimeError('MinerU did not return full.md')
-                return markdown
+                return markdown, page_count
             if state == 'failed':
                 raise RuntimeError(item.get('err_msg', 'MinerU parse failed'))
         time.sleep(POLL_INTERVAL_SECONDS)
@@ -186,9 +385,13 @@ def parse_document():
             return jsonify({'ok': False, 'error': f'failed to split pdf: {error}'}), 400
 
     markdown_parts = []
-    for chunk_name, chunk_bytes in chunks:
+    total_page_count = 0
+    for i, (chunk_name, chunk_bytes) in enumerate(chunks):
         try:
-            markdown_parts.append(parse_single_file(chunk_name, chunk_bytes))
+            page_offset = i * MAX_PDF_PAGES
+            md, pc = parse_single_file(chunk_name, chunk_bytes, page_offset=page_offset)
+            markdown_parts.append(md)
+            total_page_count += pc
         except Exception as error:
             logger.error(f'MinerU parse failed for {chunk_name}: {error}', exc_info=True)
             return jsonify({'ok': False, 'error': str(error)}), 502

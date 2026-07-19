@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask
@@ -61,6 +62,9 @@ def register_blueprints(app: Flask):
 
 
 def create_app(config_class="app.config.DevelopmentConfig"):
+    # Windows 控制台默认 GBK 编码，无法输出 emoji 等字符，强制改为 UTF-8
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     app = Flask(__name__)
     app.config.from_object(config_class)
 

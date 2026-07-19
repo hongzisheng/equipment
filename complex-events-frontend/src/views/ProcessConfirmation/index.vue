@@ -234,10 +234,20 @@ onMounted(() => {
 
 .panel-card {
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+}
+
+/* el-card 将 slot 内容包在 el-card__body 中，必须让它参与 flex 布局 */
+.panel-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .panel-header {

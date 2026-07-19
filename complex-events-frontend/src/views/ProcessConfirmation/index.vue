@@ -46,7 +46,7 @@ import ProcessFilter from './components/ProcessFilter.vue'
 import ProcessTable from './components/ProcessTable.vue'
 import ProcessDetail from './components/ProcessDetail.vue'
 import { getProcessList, getEquipmentInfo, updateProcess, cancelProcess } from '@/api/processApi'
-import { parseTimeToMinutes } from './utils'
+import { parseTimeToMinutes, TASK_STATUS } from './utils'
 
 const processes = ref([])
 const equipmentInfo = ref({ categories: [], types: {}, instances: {} })
@@ -83,8 +83,16 @@ const fetchEquipmentInfo = async () => {
   }
 }
 
+// 后台管理员不可操作的状态：终态 + 待开始（工人操作）+ 等待施工回签（工人操作）
+const ADMIN_NON_OPERABLE = new Set([
+  TASK_STATUS.COMPLETED,
+  TASK_STATUS.CANCELLED,
+  TASK_STATUS.RELEASED,
+  TASK_STATUS.PENDING_SIGN,
+])
+
 const hasPendingProcesses = computed(() => {
-  return processes.value.some(p => p.status !== 'completed' && p.status !== 'cancelled')
+  return processes.value.some(p => !ADMIN_NON_OPERABLE.has(p.status))
 })
 
 const filteredProcesses = computed(() => {
@@ -184,7 +192,7 @@ const cancelProcessStatus = async (processId) => {
 
 function handleBatchConfirm() {
   const pendingNodes = processes.value.filter(
-    p => p.status !== 'completed' && p.status !== 'cancelled'
+    p => !ADMIN_NON_OPERABLE.has(p.status)
   )
 
   if (pendingNodes.length === 0) {

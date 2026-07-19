@@ -396,7 +396,7 @@ class Scheduler(IScheduler):
             "actual_end_time": self.format_time(project_end_time),
         }
 
-    def schedule_from_work_orders(self, work_order_ids, algorithm_name="topological"):
+    def schedule_from_work_orders(self, work_order_ids, algorithm_name="topological", schedule_plan_id=None):
         """根据工单ID列表执行调度"""
         try:
             db_path = _get_db_path()
@@ -551,7 +551,7 @@ class Scheduler(IScheduler):
 
             # 写入数据库
             formatted = self.format_schedule_plan(plan)
-            self._save_schedule_tasks_to_db(formatted)
+            self._save_schedule_tasks_to_db(formatted, schedule_plan_id)
             stats = self.get_statistics_data()
             result_data = {
                 "success": True,
@@ -568,20 +568,26 @@ class Scheduler(IScheduler):
             traceback.print_exc()
             raise
 
-    def _save_schedule_tasks_to_db(self, formatted_plan):
-        """将调度结果写入 schedule_tasks 表"""
+    def _save_schedule_tasks_to_db(self, formatted_plan, schedule_plan_id=None):
+        """将调度结果写入 schedule_tasks 表
+
+        - schedule_plan_id 为 None：保持原覆盖式行为（DELETE 全表后插入），向后兼容旧接口
+        - schedule_plan_id 有值：不删除已有数据，按方案隔离插入，每次保存为新方案
+        """
         db_path = _get_db_path()
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
-        c.execute("DELETE FROM schedule_tasks")
+        if schedule_plan_id is None:
+            c.execute("DELETE FROM schedule_tasks")
         for task in formatted_plan:
             c.execute(
                 """
                 INSERT INTO schedule_tasks
                 (duration_days, end_time, end_time_formatted, equipment_category,
                 equipment_id, equipment_name, equipment_type_id, equipment_type_name,
-                predecessors, process_id, process_name, start_time, start_time_formatted, workers)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                predecessors, process_id, process_name, start_time, start_time_formatted,
+                workers, schedule_plan_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     task["duration_days"],
@@ -598,6 +604,7 @@ class Scheduler(IScheduler):
                     task["start_time"],
                     task["start_time_formatted"],
                     json.dumps(task["workers"], ensure_ascii=False),
+                    schedule_plan_id,
                 ),
             )
             # 更新 work_order_tasks 的计划时间
@@ -681,10 +688,10 @@ def reset_scheduler():
     _scheduler = None
 
 
-def run_scheduling(work_order_ids, algorithm_name="topological"):
+def run_scheduling(work_order_ids, algorithm_name="topological", schedule_plan_id=None):
     """供 API 调用的顶层调度函数"""
     scheduler = get_scheduler()
-    result = scheduler.schedule_from_work_orders(work_order_ids, algorithm_name)
+    result = scheduler.schedule_from_work_orders(work_order_ids, algorithm_name, schedule_plan_id)
     if isinstance(result, tuple) and len(result) == 4:
         return result
     elif isinstance(result, dict):

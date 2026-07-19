@@ -20,3 +20,4 @@ from .chat.chat_blueprint import chat_bp
 from .rules.search.search_router import search_archive_bp
 from .rules.file.file_router import file_bp
 from .rules.extraction.procedure_router import procedure_bp
+from .staff import staff_bp

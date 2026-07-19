@@ -14,24 +14,53 @@
           <div class="section-title" ><img src="/src/assets/iconfont/算法选择.png" alt="算法选择" class="panel-icon mr6" />模型选择 </div>
           </div>
          
+          <!-- 调度模式切换：按工单 / 按检修计划 -->
+          <div class="schedule-mode-bar">
+            <span class="mode-label">调度模式：</span>
+            <el-radio-group v-model="scheduleMode" @change="onScheduleModeChange">
+              <el-radio value="workorder">按工单</el-radio>
+              <el-radio value="plan">按检修计划</el-radio>
+            </el-radio-group>
+          </div>
           <div class="algorithm-target-selection">
+            <!-- 按工单模式：选择工单 -->
             <el-select
-    v-model="selectedWorkOrders"
-    placeholder="请选择工单"
-    class="selection-item"
-    :loading="loadingWorkOrders"
-    multiple
-    clearable
-    @change="onWorkOrderChange"
-    style="width: 100%;"
-  >
-    <el-option
-      v-for="workOrder in workOrders"
-      :key="workOrder.id"
-      :label="`${workOrder.order_number} - ${workOrder.title} (${workOrder.equipment_name})`"
-      :value="workOrder.id"
-    />
-  </el-select>
+              v-if="scheduleMode === 'workorder'"
+              v-model="selectedWorkOrders"
+              placeholder="请选择工单"
+              class="selection-item"
+              :loading="loadingWorkOrders"
+              multiple
+              clearable
+              @change="onWorkOrderChange"
+              style="width: 100%;"
+            >
+              <el-option
+                v-for="workOrder in workOrders"
+                :key="workOrder.id"
+                :label="`${workOrder.order_number} - ${workOrder.title} (${workOrder.equipment_name})`"
+                :value="workOrder.id"
+              />
+            </el-select>
+            <!-- 按检修计划模式：选择检修计划 -->
+            <el-select
+              v-else
+              v-model="selectedPlanId"
+              placeholder="请选择检修计划"
+              class="selection-item"
+              :loading="loadingPlans"
+              clearable
+              filterable
+              @change="onPlanChange"
+              style="width: 100%;"
+            >
+              <el-option
+                v-for="plan in maintenancePlans"
+                :key="plan.id"
+                :label="`${plan.plan_name}（${plan.work_order_count || 0} 工单）`"
+                :value="plan.id"
+              />
+            </el-select>
             <el-select v-model="selectedTarget" placeholder="请选择目标" class="selection-item">
               <el-option label="最小化工期" value="minimize_duration" />
               <el-option label="最小化成本" value="minimize_cost" />
@@ -44,8 +73,16 @@
           <div class="button-group mt8">
             <el-button type="primary" class="schedule-btn" :loading="loadingSchedule"
               @click="runSchedule">生成调度</el-button>
-          
+
             <el-button type="success" @click="savePlan" :loading="saving" class="save-btn">保存方案</el-button>
+            <!-- 方案历史按钮：仅按检修计划模式且已选计划时显示 -->
+            <el-button
+              v-if="scheduleMode === 'plan' && selectedPlanId"
+              type="info"
+              @click="openPlanHistory"
+              :loading="loadingPlanHistory"
+              class="plan-history-btn"
+            >方案历史</el-button>
            <el-button
     v-if="showGanttView"
     type="warning"
@@ -230,6 +267,256 @@
         </span>
       </template>
     </el-dialog>
+    <!-- 方案历史对话框（仅按检修计划模式使用） -->
+    <el-dialog
+      v-model="planHistoryDialogVisible"
+      title="方案历史"
+      width="80%"
+      :close-on-click-modal="false"
+    >
+      <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+        <el-button
+          type="primary"
+          :disabled="selectedComparePlans.length !== 2"
+          @click="openCompareDialog"
+        >
+          对比选中方案{{ selectedComparePlans.length === 2 ? `（已选 ${selectedComparePlans.length} 个）` : `（需选 2 个，当前 ${selectedComparePlans.length}）` }}
+        </el-button>
+        <span style="color: #909399; font-size: 13px;">提示：在下方勾选两个方案后点击对比</span>
+      </div>
+      <el-table
+        ref="planHistoryTableRef"
+        :data="planHistoryList"
+        v-loading="loadingPlanHistory"
+        border
+        stripe
+        style="width: 100%"
+        :row-class-name="planHistoryRowClassName"
+        @selection-change="onPlanHistorySelectionChange"
+      >
+        <el-table-column type="selection" width="50" :selectable="canSelectPlan" />
+        <el-table-column prop="schedule_name" label="方案名" min-width="180">
+          <template #default="{ row }">
+            <span>{{ row.schedule_name }}</span>
+            <el-tag
+              v-if="currentActiveSchedulePlanId && row.id === currentActiveSchedulePlanId"
+              type="success"
+              size="small"
+              style="margin-left: 8px;"
+            >当前生效</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="algorithm" label="算法" min-width="120" />
+        <el-table-column prop="status" label="状态" min-width="100">
+          <template #default="{ row }">
+            <el-tag :type="planStatusTagType(row.status)">
+              {{ row.status || '—' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="total_tasks" label="任务数" min-width="80" />
+        <el-table-column prop="created_at" label="创建时间" min-width="160" />
+        <el-table-column label="操作" min-width="200" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link @click="viewPlanSchedule(row)">查看</el-button>
+            <el-button
+              v-if="row.status !== '生效中'"
+              type="success"
+              link
+              @click="activatePlan(row)"
+            >设为生效</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="planHistoryDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+    <!-- 方案对比对话框 -->
+    <el-dialog
+      v-model="compareDialogVisible"
+      title="调度方案对比"
+      width="95%"
+      top="3vh"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div v-loading="loadingCompare">
+        <!-- 顶部：两个方案元信息并排卡片 -->
+        <el-row :gutter="16" v-if="compareData">
+          <el-col :span="12">
+            <el-card class="compare-card compare-card-left" shadow="hover">
+              <template #header>
+                <div class="compare-card-header">
+                  <span class="compare-card-title">方案 A：{{ compareData.plan1.schedule_name }}</span>
+                  <el-button
+                    v-if="compareData.plan1.status !== '生效中'"
+                    type="success"
+                    size="small"
+                    @click="activatePlanFromCompare(compareData.plan1)"
+                  >设为生效</el-button>
+                  <el-tag v-else type="success" size="small">当前生效</el-tag>
+                </div>
+              </template>
+              <div class="compare-card-body">
+                <div class="compare-meta"><span>算法：</span>{{ compareData.plan1.algorithm || '—' }}</div>
+                <div class="compare-meta"><span>状态：</span>{{ compareData.plan1.status || '—' }}</div>
+                <div class="compare-meta"><span>创建时间：</span>{{ compareData.plan1.created_at || '—' }}</div>
+                <div class="compare-meta"><span>任务数：</span>{{ compareData.overview1.total_tasks }}</div>
+                <div class="compare-meta"><span>总工期：</span>{{ compareData.overview1.total_duration_days }} 天</div>
+                <div class="compare-meta"><span>起止时间：</span>{{ compareData.overview1.start_time_formatted || '—' }} ~ {{ compareData.overview1.end_time_formatted || '—' }}</div>
+                <div class="compare-meta"><span>工人数：</span>{{ compareData.overview1.worker_count }}</div>
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :span="12">
+            <el-card class="compare-card compare-card-right" shadow="hover">
+              <template #header>
+                <div class="compare-card-header">
+                  <span class="compare-card-title">方案 B：{{ compareData.plan2.schedule_name }}</span>
+                  <el-button
+                    v-if="compareData.plan2.status !== '生效中'"
+                    type="success"
+                    size="small"
+                    @click="activatePlanFromCompare(compareData.plan2)"
+                  >设为生效</el-button>
+                  <el-tag v-else type="success" size="small">当前生效</el-tag>
+                </div>
+              </template>
+              <div class="compare-card-body">
+                <div class="compare-meta"><span>算法：</span>{{ compareData.plan2.algorithm || '—' }}</div>
+                <div class="compare-meta"><span>状态：</span>{{ compareData.plan2.status || '—' }}</div>
+                <div class="compare-meta"><span>创建时间：</span>{{ compareData.plan2.created_at || '—' }}</div>
+                <div class="compare-meta"><span>任务数：</span>{{ compareData.overview2.total_tasks }}</div>
+                <div class="compare-meta"><span>总工期：</span>{{ compareData.overview2.total_duration_days }} 天</div>
+                <div class="compare-meta"><span>起止时间：</span>{{ compareData.overview2.start_time_formatted || '—' }} ~ {{ compareData.overview2.end_time_formatted || '—' }}</div>
+                <div class="compare-meta"><span>工人数：</span>{{ compareData.overview2.worker_count }}</div>
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <!-- 中部：差异统计 -->
+        <el-card v-if="compareData" class="mt12" shadow="never">
+          <div class="section-title">差异概览</div>
+          <el-row :gutter="16" class="diff-summary-row">
+            <el-col :span="6">
+              <div class="diff-summary-item diff-added">
+                <div class="diff-num">{{ compareData.task_diff.summary.added }}</div>
+                <div class="diff-label">方案B新增任务</div>
+              </div>
+            </el-col>
+            <el-col :span="6">
+              <div class="diff-summary-item diff-removed">
+                <div class="diff-num">{{ compareData.task_diff.summary.removed }}</div>
+                <div class="diff-label">方案B删除任务</div>
+              </div>
+            </el-col>
+            <el-col :span="6">
+              <div class="diff-summary-item diff-changed">
+                <div class="diff-num">{{ compareData.task_diff.summary.changed }}</div>
+                <div class="diff-label">有差异的任务</div>
+              </div>
+            </el-col>
+            <el-col :span="6">
+              <div class="diff-summary-item diff-unchanged">
+                <div class="diff-num">{{ compareData.task_diff.summary.unchanged }}</div>
+                <div class="diff-label">完全相同</div>
+              </div>
+            </el-col>
+          </el-row>
+          <div class="diff-filter-bar">
+            <span>差异筛选：</span>
+            <el-radio-group v-model="diffFilter" size="small">
+              <el-radio-button value="all">全部 ({{ compareData.task_diff.summary.total }})</el-radio-button>
+              <el-radio-button value="changed">差异 ({{ compareData.task_diff.summary.added + compareData.task_diff.summary.removed + compareData.task_diff.summary.changed }})</el-radio-button>
+              <el-radio-button value="added">新增 ({{ compareData.task_diff.summary.added }})</el-radio-button>
+              <el-radio-button value="removed">删除 ({{ compareData.task_diff.summary.removed }})</el-radio-button>
+              <el-radio-button value="unchanged">相同 ({{ compareData.task_diff.summary.unchanged }})</el-radio-button>
+            </el-radio-group>
+            <el-button type="warning" size="small" @click="exportCompareReport" style="margin-left: 12px;">导出对比报告</el-button>
+          </div>
+        </el-card>
+
+        <!-- 底部：左右并排任务表格 -->
+        <el-card v-if="compareData" class="mt12" shadow="never">
+          <div class="section-title">任务明细对比（按 设备 + 工序 对齐）</div>
+          <el-table
+            :data="filteredDiffItems"
+            border
+            stripe
+            style="width: 100%"
+            :row-class-name="diffRowClassName"
+            :max-height="500"
+          >
+            <el-table-column label="设备 / 工序" min-width="180" fixed>
+              <template #default="{ row }">
+                <div class="diff-eq-name">{{ row.task1?.equipment_name || row.task2?.equipment_name || '—' }}</div>
+                <div class="diff-proc-name">{{ row.task1?.process_name || row.task2?.process_name || '—' }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="方案 A" align="center">
+              <el-table-column label="开始时间" min-width="140">
+                <template #default="{ row }">
+                  <span>{{ row.task1?.start_time_formatted || '—' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="结束时间" min-width="140">
+                <template #default="{ row }">
+                  <span>{{ row.task1?.end_time_formatted || '—' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="工人" min-width="160">
+                <template #default="{ row }">
+                  <span>{{ formatWorkersText(row.task1?.workers) }}</span>
+                </template>
+              </el-table-column>
+            </el-table-column>
+            <el-table-column label="方案 B" align="center">
+              <el-table-column label="开始时间" min-width="140">
+                <template #default="{ row }">
+                  <span>{{ row.task2?.start_time_formatted || '—' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="结束时间" min-width="140">
+                <template #default="{ row }">
+                  <span>{{ row.task2?.end_time_formatted || '—' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="工人" min-width="160">
+                <template #default="{ row }">
+                  <span>{{ formatWorkersText(row.task2?.workers) }}</span>
+                </template>
+              </el-table-column>
+            </el-table-column>
+            <el-table-column label="差异类型" min-width="140" fixed="right">
+              <template #default="{ row }">
+                <el-tag :type="diffTagType(row.status)" size="small">
+                  {{ diffStatusLabel(row.status) }}
+                </el-tag>
+                <div v-if="row.changes && row.changes.length" class="diff-changes-text">
+                  {{ row.changes.join('、') }}
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+
+        <!-- 简化甘特图对比 -->
+        <el-card v-if="compareData" class="mt12" shadow="never">
+          <div class="section-title">时间轴对比（甘特图简化视图）</div>
+          <GanttCompareView
+            :plan1="compareData.plan1"
+            :plan2="compareData.plan2"
+            :overview1="compareData.overview1"
+            :overview2="compareData.overview2"
+          />
+        </el-card>
+      </div>
+      <template #footer>
+        <el-button @click="compareDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
     <el-dialog
       v-model="editWorkerDialogVisible"
       title="更换工人"
@@ -279,6 +566,7 @@ import * as XLSX from 'xlsx'
 import axios from 'axios'
 import request from '@/utils/request'
 import GanttView from './GanttView.vue'
+import GanttCompareView from './GanttCompareView.vue'
 const selectedDeviceFilter = ref('')
 const currentPage = ref(1)          // 当前页码
 const pageSize = ref(10) 
@@ -295,12 +583,37 @@ const editingWorkers = ref({})
 
 const saving = ref(false)
 
+// ====== 按检修计划模式相关状态 ======
+const scheduleMode = ref('workorder')          // 调度模式：'workorder' | 'plan'
+const maintenancePlans = ref([])                // 检修计划列表
+const selectedPlanId = ref(null)                // 选中的检修计划ID
+const loadingPlans = ref(false)                 // 检修计划加载状态
+const currentSchedulePlanId = ref(null)         // 当前生成的调度方案ID
+const currentScheduleName = ref('')             // 当前生成的调度方案名
+const planHistoryDialogVisible = ref(false)     // 方案历史对话框
+const planHistoryList = ref([])                 // 方案历史列表
+const loadingPlanHistory = ref(false)           // 方案历史加载状态
+const currentActiveSchedulePlanId = ref(null)   // 当前生效方案ID（用于历史列表标记）
+
+// ====== 方案对比相关状态 ======
+const planHistoryTableRef = ref(null)            // 方案历史表格引用
+const selectedComparePlans = ref([])             // 选中的对比方案（最多2个）
+const compareDialogVisible = ref(false)          // 对比对话框
+const loadingCompare = ref(false)                // 对比数据加载状态
+const compareData = ref(null)                    // 对比数据
+const diffFilter = ref('changed')                // 差异筛选：all/changed/added/removed/unchanged
+
 async function savePlan() {
+  // 按检修计划模式：方案在生成调度时已自动保存为新方案，无需再保存
+  if (scheduleMode.value === 'plan') {
+    ElMessage.info('方案已随生成调度时自动保存')
+    return
+  }
   saving.value = true
   try {
     await new Promise((r) => setTimeout(r, 600))
     ElMessage.success('方案已保存')
-    
+
     // 保存完成后自动导出Excel文件
     exportAssignmentToExcel()
   } catch {
@@ -331,6 +644,429 @@ async function fetchWorkOrders() {
     loadingWorkOrders.value = false
   }
 }
+
+// ====== 按检修计划模式相关方法 ======
+
+// 获取检修计划列表
+async function fetchMaintenancePlans() {
+  loadingPlans.value = true
+  try {
+    const result = await request({
+      url: '/api/maintenance-plans',
+      method: 'get',
+      params: { page: 1, page_size: 100 }
+    })
+    if (result.success && Array.isArray(result.data)) {
+      maintenancePlans.value = result.data
+    } else {
+      maintenancePlans.value = []
+      ElMessage.warning(result.message || '获取检修计划列表失败')
+    }
+  } catch (error) {
+    console.error('获取检修计划列表失败:', error)
+    ElMessage.error('获取检修计划列表失败，请检查网络连接')
+    maintenancePlans.value = []
+  } finally {
+    loadingPlans.value = false
+  }
+}
+
+// 调度模式切换处理
+function onScheduleModeChange(val) {
+  // 切换到按检修计划模式时，若尚未加载检修计划则触发加载
+  if (val === 'plan' && maintenancePlans.value.length === 0) {
+    fetchMaintenancePlans()
+  }
+  // 切换模式时清空另一种模式的选择，避免数据混淆
+  if (val === 'workorder') {
+    selectedPlanId.value = null
+  } else {
+    selectedWorkOrders.value = []
+  }
+  // 清空当前方案信息
+  currentSchedulePlanId.value = null
+  currentScheduleName.value = ''
+}
+
+// 检修计划选择变化处理
+function onPlanChange(planId) {
+  if (planId) {
+    const plan = maintenancePlans.value.find(p => p.id === planId)
+    if (plan) {
+      ElMessage.info(`已选择检修计划: ${plan.plan_name}`)
+    }
+  }
+  // 切换计划时清空当前方案信息
+  currentSchedulePlanId.value = null
+  currentScheduleName.value = ''
+}
+
+// 打开方案历史对话框
+async function openPlanHistory() {
+  if (!selectedPlanId.value) {
+    ElMessage.warning('请先选择检修计划')
+    return
+  }
+  planHistoryDialogVisible.value = true
+  loadingPlanHistory.value = true
+  try {
+    const result = await request({
+      url: `/api/maintenance-plans/${selectedPlanId.value}/schedule-plans`,
+      method: 'get'
+    })
+    if (result.success && Array.isArray(result.data)) {
+      planHistoryList.value = result.data
+      currentActiveSchedulePlanId.value = result.current_schedule_plan_id || null
+    } else {
+      planHistoryList.value = []
+      currentActiveSchedulePlanId.value = null
+      ElMessage.warning(result.message || '获取方案历史失败')
+    }
+  } catch (error) {
+    console.error('获取方案历史失败:', error)
+    ElMessage.error('获取方案历史失败，请检查后端服务')
+    planHistoryList.value = []
+    currentActiveSchedulePlanId.value = null
+  } finally {
+    loadingPlanHistory.value = false
+  }
+}
+
+// 方案历史行样式：高亮当前生效方案
+function planHistoryRowClassName({ row }) {
+  if (currentActiveSchedulePlanId.value && row.id === currentActiveSchedulePlanId.value) {
+    return 'current-plan-row'
+  }
+  return ''
+}
+
+// 方案状态标签类型映射
+function planStatusTagType(status) {
+  if (status === '生效中') return 'success'
+  if (status === '已归档') return 'info'
+  if (status === '生成中') return 'warning'
+  if (status === '失败') return 'danger'
+  return 'info'
+}
+
+// 多选：限制最多选2个，且只有成功生成的方案可选
+function canSelectPlan(row) {
+  return row.status && row.status !== '失败' && row.status !== '生成中'
+}
+
+// 方案历史多选变化处理
+function onPlanHistorySelectionChange(selection) {
+  // 限制最多2个：若超过2个，保留最后选的2个
+  if (selection.length > 2) {
+    const trimmed = selection.slice(-2)
+    // 清空再重新设置（nextTick 避免 el-table 内部状态不一致）
+    nextTick(() => {
+      planHistoryTableRef.value?.clearSelection()
+      trimmed.forEach(row => planHistoryTableRef.value?.toggleRowSelection(row, true))
+    })
+    selectedComparePlans.value = trimmed
+  } else {
+    selectedComparePlans.value = selection
+  }
+}
+
+// 打开方案对比对话框
+async function openCompareDialog() {
+  if (selectedComparePlans.value.length !== 2) {
+    ElMessage.warning('请选择两个方案进行对比')
+    return
+  }
+  const [p1, p2] = selectedComparePlans.value
+  compareDialogVisible.value = true
+  loadingCompare.value = true
+  compareData.value = null
+  diffFilter.value = 'changed'
+  try {
+    const result = await request({
+      url: '/api/schedule-plans/compare',
+      method: 'get',
+      params: { id1: p1.id, id2: p2.id }
+    })
+    if (result.success && result.data) {
+      compareData.value = result.data
+    } else {
+      ElMessage.error(result.message || '获取对比数据失败')
+    }
+  } catch (error) {
+    console.error('获取对比数据失败:', error)
+    ElMessage.error('获取对比数据失败，请检查后端服务')
+  } finally {
+    loadingCompare.value = false
+  }
+}
+
+// 切换生效方案
+async function activatePlan(row) {
+  if (!row || !row.id) return
+  try {
+    await ElMessageBox.confirm(
+      `确认将方案「${row.schedule_name}」设为生效方案？同检修计划下其他方案将被归档。`,
+      '切换生效方案',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  try {
+    const result = await request({
+      url: `/api/schedule-plans/${row.id}/activate`,
+      method: 'put'
+    })
+    if (result.success) {
+      ElMessage.success(result.message || '方案已设为生效')
+      // 刷新方案历史列表
+      await openPlanHistory()
+      // 若当前对比对话框打开，也刷新对比数据中的状态
+      if (compareDialogVisible.value && compareData.value) {
+        if (compareData.value.plan1.id === row.id) compareData.value.plan1.status = '生效中'
+        if (compareData.value.plan2.id === row.id) compareData.value.plan2.status = '生效中'
+        // 另一个方案若同计划则改为已归档
+        const otherPlan = compareData.value.plan1.id === row.id ? compareData.value.plan2 : compareData.value.plan1
+        if (otherPlan.plan_id === row.plan_id) otherPlan.status = '已归档'
+      }
+    } else {
+      ElMessage.error(result.message || '切换生效失败')
+    }
+  } catch (error) {
+    console.error('切换生效失败:', error)
+    ElMessage.error('切换生效失败，请检查后端服务')
+  }
+}
+
+// 从对比对话框中触发切换生效
+function activatePlanFromCompare(plan) {
+  activatePlan({ id: plan.id, schedule_name: plan.schedule_name, plan_id: plan.plan_id })
+}
+
+// 差异筛选：根据 diffFilter 过滤对比项
+const filteredDiffItems = computed(() => {
+  if (!compareData.value) return []
+  const items = compareData.value.task_diff.items || []
+  if (diffFilter.value === 'all') return items
+  if (diffFilter.value === 'changed') {
+    return items.filter(i => i.status === 'added' || i.status === 'removed' || i.status === 'changed')
+  }
+  return items.filter(i => i.status === diffFilter.value)
+})
+
+// 差异行样式
+function diffRowClassName({ row }) {
+  if (row.status === 'added') return 'diff-row-added'
+  if (row.status === 'removed') return 'diff-row-removed'
+  if (row.status === 'changed') return 'diff-row-changed'
+  return 'diff-row-unchanged'
+}
+
+// 差异标签类型
+function diffTagType(status) {
+  if (status === 'added') return 'success'
+  if (status === 'removed') return 'danger'
+  if (status === 'changed') return 'warning'
+  return 'info'
+}
+
+// 差异状态中文标签
+function diffStatusLabel(status) {
+  const map = { added: '方案B新增', removed: '方案B删除', changed: '有差异', unchanged: '相同' }
+  return map[status] || status
+}
+
+// 格式化工人显示文本
+function formatWorkersText(workers) {
+  if (!workers || typeof workers !== 'object') return '—'
+  const parts = Object.entries(workers).map(([type, names]) => {
+    const list = Array.isArray(names) ? names : []
+    return `${type}: ${list.length > 0 ? list.join('、') : '待分配'}`
+  })
+  return parts.length > 0 ? parts.join('；') : '未分配'
+}
+
+// 导出对比报告为 Excel
+function exportCompareReport() {
+  if (!compareData.value) {
+    ElMessage.warning('暂无对比数据')
+    return
+  }
+  try {
+    const { plan1, plan2, overview1, overview2, task_diff } = compareData.value
+    const wb = XLSX.utils.book_new()
+
+    // Sheet1: 概览对比
+    const overviewData = [
+      ['指标', '方案 A', '方案 B', '差异'],
+      ['方案名', plan1.schedule_name || '', plan2.schedule_name || '', ''],
+      ['算法', plan1.algorithm || '', plan2.algorithm || '', ''],
+      ['状态', plan1.status || '', plan2.status || '', ''],
+      ['创建时间', plan1.created_at || '', plan2.created_at || '', ''],
+      ['任务数', overview1.total_tasks, overview2.total_tasks, overview2.total_tasks - overview1.total_tasks],
+      ['总工期(天)', overview1.total_duration_days, overview2.total_duration_days, (overview2.total_duration_days - overview1.total_duration_days).toFixed(2)],
+      ['开始时间', overview1.start_time_formatted || '', overview2.start_time_formatted || '', ''],
+      ['结束时间', overview1.end_time_formatted || '', overview2.end_time_formatted || '', ''],
+      ['工人数', overview1.worker_count, overview2.worker_count, overview2.worker_count - overview1.worker_count],
+      ['', '', '', ''],
+      ['差异统计', '数量', '', ''],
+      ['方案B新增任务', task_diff.summary.added, '', ''],
+      ['方案B删除任务', task_diff.summary.removed, '', ''],
+      ['有差异的任务', task_diff.summary.changed, '', ''],
+      ['完全相同', task_diff.summary.unchanged, '', ''],
+    ]
+    const ws1 = XLSX.utils.aoa_to_sheet(overviewData)
+    ws1['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 30 }, { wch: 15 }]
+    XLSX.utils.book_append_sheet(wb, ws1, '概览对比')
+
+    // Sheet2: 任务级差异明细
+    const taskData = [['设备', '工序', '方案A开始', '方案A结束', '方案A工人', '方案B开始', '方案B结束', '方案B工人', '差异类型', '差异说明']]
+    task_diff.items.forEach(item => {
+      taskData.push([
+        item.task1?.equipment_name || item.task2?.equipment_name || '',
+        item.task1?.process_name || item.task2?.process_name || '',
+        item.task1?.start_time_formatted || '',
+        item.task1?.end_time_formatted || '',
+        formatWorkersText(item.task1?.workers),
+        item.task2?.start_time_formatted || '',
+        item.task2?.end_time_formatted || '',
+        formatWorkersText(item.task2?.workers),
+        diffStatusLabel(item.status),
+        (item.changes || []).join('、')
+      ])
+    })
+    const ws2 = XLSX.utils.aoa_to_sheet(taskData)
+    ws2['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 12 }, { wch: 20 }]
+    XLSX.utils.book_append_sheet(wb, ws2, '任务级差异')
+
+    const fileName = `方案对比_${plan1.schedule_name}_vs_${plan2.schedule_name}_${new Date().toISOString().slice(0, 10)}.xlsx`
+    XLSX.writeFile(wb, fileName)
+    ElMessage.success('对比报告已导出')
+  } catch (error) {
+    console.error('导出对比报告失败:', error)
+    ElMessage.error('导出对比报告失败')
+  }
+}
+
+// 查看指定调度方案详情（支持历史方案），加载到主表格
+async function viewPlanSchedule(row) {
+  if (!row || !row.id) {
+    ElMessage.warning('方案信息缺失')
+    return
+  }
+  try {
+    const result = await request({
+      url: `/api/schedule-plans/${row.id}`,
+      method: 'get'
+    })
+    if (result.success && result.data) {
+      const data = result.data
+      const tasks = data.schedule_tasks || []
+      // 填充主表格
+      assignmentRows.value = mapSchedulePlanToRows(tasks)
+      // 记录当前方案信息
+      currentSchedulePlanId.value = data.id || null
+      if (row && row.schedule_name) {
+        currentScheduleName.value = row.schedule_name
+      }
+      // 保存到 localStorage
+      localStorage.setItem('schedule_plan', JSON.stringify(tasks))
+      // 重建甘特图
+      buildScheduleRows(tasks, projectStartDatetime.value)
+      useRealSchedule.value = true
+      showGanttView.value = false
+      await nextTick()
+      showGanttView.value = true
+      buildWorkerBusyMap(tasks)
+      ElMessage.success(`已加载方案：${row?.schedule_name || data.schedule_plan_id || ''}`)
+      // 关闭对话框
+      planHistoryDialogVisible.value = false
+    } else {
+      ElMessage.warning(result.message || '该检修计划暂无生效方案')
+    }
+  } catch (error) {
+    console.error('加载方案详情失败:', error)
+    ElMessage.error('加载方案详情失败，请检查后端服务')
+  }
+}
+
+// 公共辅助：将后端 schedule_plan 数组映射为前端 assignmentRows 结构
+function mapSchedulePlanToRows(schedulePlan) {
+  return (schedulePlan || []).map(task => {
+    const safeWorkers = task.workers && typeof task.workers === 'object' ? task.workers : {}
+    const workersArray = Object.entries(safeWorkers).map(([type, workers]) => {
+      const workersList = Array.isArray(workers) ? workers : []
+      const names = workersList.length > 0 ? workersList.join('、') : '待分配'
+      return `${type}: ${names}`
+    })
+    return {
+      task: task.process_name,
+      device: `${task.equipment_name}`,
+      processId: task.process_id,
+      equipmentId: task.equipment_id,
+      workers: safeWorkers,
+      workersText: Array.isArray(workersArray) && workersArray.length > 0 ? workersArray.join('；') : '未分配',
+      startTimeFormatted: task.start_time_formatted,
+      endTimeFormatted: task.end_time_formatted,
+      durationHours: task.duration_hours,
+      startDay: task.start_time,
+      endDay: task.end_time
+    }
+  })
+}
+
+// 按检修计划模式生成调度（生成即保存为新方案，一步完成）
+async function runScheduleByPlan() {
+  if (!selectedPlanId.value) {
+    ElMessage.warning('请先选择检修计划')
+    return
+  }
+  const result = await request({
+    url: `/api/maintenance-plans/${selectedPlanId.value}/run-scheduler`,
+    method: 'post',
+    data: {
+      algorithm: selectedAlgorithm.value
+    }
+  })
+  if (result.success) {
+    // 记录当前生成的方案信息
+    currentSchedulePlanId.value = result.schedule_plan_id || null
+    currentScheduleName.value = result.schedule_name || ''
+    // 填充调度结果到主表格
+    assignmentRows.value = mapSchedulePlanToRows(result.schedule_plan)
+    // 处理工人池
+    const workerPoolData = result.worker_pool || {}
+    const flatWorkers = []
+    for (const [trade, workers] of Object.entries(workerPoolData)) {
+      workers.forEach(worker => {
+        flatWorkers.push({ ...worker, type: trade })
+      })
+    }
+    workerPool.value = flatWorkers
+    // 保存到 localStorage
+    localStorage.setItem('schedule_plan', JSON.stringify(result.schedule_plan || []))
+    // 构建甘特图数据
+    buildScheduleRows(result.schedule_plan || [], projectStartDatetime.value)
+    useRealSchedule.value = true
+    showGanttView.value = false
+    await nextTick()
+    showGanttView.value = true
+    buildWorkerBusyMap(result.schedule_plan || [])
+    // 处理统计信息
+    if (result.statistics) {
+      statisticsData.value = result.statistics
+    }
+    ElMessage.success(`调度方案已生成并保存：${result.schedule_name || ''}`)
+  } else {
+    // 失败处理：区分工人不足与其他错误
+    if (result.error_type === 'insufficient_workers') {
+      ElMessage.error('工人不足，无法生成调度方案')
+    } else {
+      ElMessage.error(result.message || '调度执行失败')
+    }
+  }
+}
+
 const filteredAssignmentData = computed(() => {
   let data = assignmentRows.value || []
 
@@ -1010,6 +1746,12 @@ function syncSchedulePlanToStorage() {
 async function runSchedule() {
   loadingSchedule.value = true
   try {
+    // 按检修计划模式：调用专用流程，生成即保存为新方案
+    if (scheduleMode.value === 'plan') {
+      await runScheduleByPlan()
+      return
+    }
+    // 按工单模式：保持原有逻辑不变
     if (selectedWorkOrders.value.length === 0) {
       ElMessage.warning('请先选择至少一个工单')
       return
@@ -1115,17 +1857,8 @@ function exportAssignmentToExcel() {
   
   // 准备第一个工作表的数据 - 按开始时间排序
   const sortedByStartTime = [...assignmentRows.value].sort((a, b) => {
-    // 从开始时间字符串中提取天数和时间进行排序
-    const dayA = parseInt(a.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-    const dayB = parseInt(b.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-    
-    if (dayA !== dayB) {
-      return dayA - dayB;
-    }
-    
-    const timeA = a.startTimeFormatted.split(' ')[1];
-    const timeB = b.startTimeFormatted.split(' ')[1];
-    return timeA.localeCompare(timeB);
+    // startTimeFormatted 格式为 "YYYY-MM-DD HH:MM:SS"，字符串字典序即时间顺序
+    return a.startTimeFormatted.localeCompare(b.startTimeFormatted)
   });
   
   const data1 = sortedByStartTime.map(row => ({
@@ -1165,16 +1898,8 @@ function exportAssignmentToExcel() {
   // 对每个设备内的工序按开始时间排序
   Object.keys(groupedByDevice).forEach(device => {
     groupedByDevice[device].sort((a, b) => {
-      const dayA = parseInt(a.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-      const dayB = parseInt(b.startTimeFormatted.match(/第(\d+)天/)[1], 10);
-      
-      if (dayA !== dayB) {
-        return dayA - dayB;
-      }
-      
-      const timeA = a.startTimeFormatted.split(' ')[1];
-      const timeB = b.startTimeFormatted.split(' ')[1];
-      return timeA.localeCompare(timeB);
+      // startTimeFormatted 格式为 "YYYY-MM-DD HH:MM:SS"，字符串字典序即时间顺序
+      return a.startTimeFormatted.localeCompare(b.startTimeFormatted)
     });
   });
 
@@ -3161,6 +3886,50 @@ onMounted(() => {
   min-width: 0;
 }
 
+/* 调度模式切换栏 */
+.schedule-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.schedule-mode-bar .mode-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* 方案历史按钮样式 */
+.plan-history-btn {
+  background: #909399 !important;
+  border: 1px solid #909399 !important;
+  color: white !important;
+  font-weight: 500;
+  border-radius: 8px;
+}
+
+.plan-history-btn:hover {
+  background: #a6a9ad !important;
+  border-color: #a6a9ad !important;
+  color: white !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(144, 147, 153, 0.3);
+}
+
+/* 方案历史中当前生效方案行高亮 */
+:deep(.el-table .current-plan-row) {
+  background-color: #f0f9eb !important;
+}
+
+:deep(.el-table .current-plan-row:hover > td) {
+  background-color: #e1f3d8 !important;
+}
+
 .iconfont {
   font-size: 18px;
   color: #409EFF;
@@ -3226,5 +3995,104 @@ onMounted(() => {
 }
 .conflict-option {
   color: #f56c6c !important;
+}
+
+/* ====== 方案对比对话框样式 ====== */
+.compare-card {
+  margin-bottom: 0;
+}
+.compare-card-left {
+  border-left: 4px solid #409EFF;
+}
+.compare-card-right {
+  border-left: 4px solid #67C23A;
+}
+.compare-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.compare-card-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #303133;
+}
+.compare-card-body {
+  font-size: 13px;
+  color: #606266;
+}
+.compare-meta {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+.compare-meta span {
+  color: #909399;
+  display: inline-block;
+  min-width: 75px;
+}
+
+.diff-summary-row {
+  margin-top: 8px;
+}
+.diff-summary-item {
+  text-align: center;
+  padding: 16px 12px;
+  border-radius: 6px;
+  color: #fff;
+}
+.diff-summary-item .diff-num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.diff-summary-item .diff-label {
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.9;
+}
+.diff-added { background: #67C23A; }
+.diff-removed { background: #F56C6C; }
+.diff-changed { background: #E6A23C; }
+.diff-unchanged { background: #909399; }
+
+.diff-filter-bar {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diff-eq-name {
+  font-weight: 600;
+  color: #303133;
+  font-size: 13px;
+}
+.diff-proc-name {
+  color: #606266;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.diff-changes-text {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+:deep(.diff-row-added) {
+  background-color: #f0f9eb !important;
+}
+:deep(.diff-row-removed) {
+  background-color: #fef0f0 !important;
+}
+:deep(.diff-row-changed) {
+  background-color: #fdf6ec !important;
+}
+:deep(.diff-row-unchanged) {
+  background-color: #f4f4f5 !important;
+}
+
+.current-plan-row {
+  background-color: #f0f9eb !important;
 }
 </style>

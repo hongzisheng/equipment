@@ -1,11 +1,11 @@
 <template>
-  <div class="table-container">
+  <div class="table-container" ref="containerRef">
     <el-table
       :data="processes"
       border
       size="small"
-      height="62vh"
       style="width: 100%"
+      :height="tableHeight"
       @row-click="handleRowClick($event, row)"
       :row-class-name="getRowClassName"
       :cell-style="getCellStyle"
@@ -93,6 +93,7 @@
 </template>
 
 <script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { Monitor, View, CircleClose } from '@element-plus/icons-vue'
 import ProcessStatusTag from './ProcessStatusTag.vue'
 import { formatTime, formatWorkers, getRowClassName, getCellStyle } from '../utils'
@@ -109,13 +110,52 @@ const emit = defineEmits(['view-detail', 'cancel'])
 function handleRowClick(event, row) {
   emit('view-detail', row)
 }
+
+// 动态计算表格高度，参照工人台账的固定高度模式
+const containerRef = ref(null)
+const tableHeight = ref(670) // 默认值，与工人台账一致
+
+let resizeObserver = null
+
+onMounted(() => {
+  if (!containerRef.value) return
+  resizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const { height } = entry.contentRect
+      if (height > 0) {
+        tableHeight.value = height
+      }
+    }
+  })
+  resizeObserver.observe(containerRef.value)
+})
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+})
 </script>
 
 <style scoped>
 .table-container {
   flex: 1;
+  min-height: 0;
   padding: 0 20px 16px;
-  overflow: auto;
+  overflow: hidden;
+}
+
+/* 参照工人台账表格样式：圆角 + 边框 */
+.table-container :deep(.el-table) {
+  border-radius: 8px;
+  border: 1px solid #f0f2f5;
+  overflow: hidden;
+}
+
+/* 隐藏 el-table 内部顶部的伪元素分隔线 */
+.table-container :deep(.el-table__inner-wrapper::before) {
+  display: none;
 }
 
 :deep(.el-table .status-current-row),

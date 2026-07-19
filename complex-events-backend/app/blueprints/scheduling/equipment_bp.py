@@ -131,5 +131,3 @@ def get_equipment_instances_by_type(equipment_type_id):
         )
     except Exception as e:
         return Result.fail(message=f"根据设备类型查询设备实例失败: {str(e)}")
-
-

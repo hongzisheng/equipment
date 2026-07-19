@@ -142,7 +142,6 @@ const handleLogout = () => {
 .sidebar {
   width: var(--my-sidebar-width, 240px);
   min-width: var(--my-sidebar-width, 240px);
-  height: 100vh;
   background-color: var(--my-menu-bg-color, #2b3243);
   color: var(--my-menu-text-color, #a6b0c3);
   overflow-y: auto;
@@ -168,7 +167,6 @@ const handleLogout = () => {
 .main-container {
   flex: 1;
   overflow-y: auto;
-  height: 100vh;
   background-color: #f0f2f5;
   background-image: radial-gradient(#d1d5db 1px, transparent 1px);
   background-size: 24px 24px;

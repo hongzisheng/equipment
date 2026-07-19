@@ -169,12 +169,6 @@ export const constantRoutes: RouteItem[] = [
         meta: { title: '工人', icon: 'user' },
       },
       {
-        path: '/dispatch/equipment',
-        name: '设备',
-        component: () => import('@/views/scheduling/equipment/index.vue'),
-        meta: { title: '设备', icon: 'equipment' },
-      },
-      {
         path: '/dispatch/order',
         name: '工单',
         component: () => import('@/views/scheduling/order/index.vue'),

@@ -142,7 +142,7 @@
               <el-tag v-else type="info" size="small">未转换</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="280" align="center">
+          <el-table-column label="操作" width="340" align="center">
             <template #default="{ row }">
               <el-button size="small" type="primary" text @click="openPreview(row)">预览</el-button>
               <el-button
@@ -156,6 +156,15 @@
                 {{ convertingId === row.id ? '转换中...' : '转换为MD' }}
               </el-button>
               <el-button size="small" type="danger" text @click="deleteFileFromList(row.id)">删除</el-button>
+              <el-button
+                v-if="row.converted"
+                size="small"
+                type="warning"
+                text
+                @click="deleteMdFromFile(row.id)"
+              >
+                删除MD
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -674,6 +683,27 @@ const deleteFileFromList = async (id) => {
       const data = await res.json()
       if (data.success) {
         ElMessage.success('删除成功')
+        await loadFiles()
+      } else {
+        ElMessage.error(data.message || '删除失败')
+      }
+    } catch (err) {
+      ElMessage.error('删除失败：' + err.message)
+    }
+  }).catch(() => {})
+}
+
+const deleteMdFromFile = async (id) => {
+  ElMessageBox.confirm('确定删除转换后的 md 文件吗？', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/files/${id}/md`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        ElMessage.success('md 文件已删除')
         await loadFiles()
       } else {
         ElMessage.error(data.message || '删除失败')

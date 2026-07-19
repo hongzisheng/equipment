@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Blueprint, request, jsonify, send_file, make_response
 from werkzeug.utils import secure_filename
 from app.utils import get_db_path
-from ..extraction.parse_router import parse_single_file, build_pdf_chunks
+from ..extraction.parse_router import parse_single_file, build_pdf_chunks, MAX_PDF_PAGES
 
 MD_FOLDER = Path(__file__).resolve().parent.parent.parent.parent.parent / 'assets' / 'mdfile'
 
@@ -180,8 +180,10 @@ def convert_file_to_md(file_id):
             chunks = [(original_name, file_bytes)]
 
         markdown_parts = []
-        for chunk_name, chunk_bytes in chunks:
-            markdown_parts.append(parse_single_file(chunk_name, chunk_bytes))
+        for i, (chunk_name, chunk_bytes) in enumerate(chunks):
+            page_offset = i * MAX_PDF_PAGES
+            md, _ = parse_single_file(chunk_name, chunk_bytes, page_offset=page_offset)
+            markdown_parts.append(md)
         markdown = '\n\n'.join(part.strip() for part in markdown_parts if part is not None)
 
         md_path.write_text(markdown, encoding='utf-8')
@@ -253,6 +255,38 @@ def delete_file(file_id):
     return jsonify({'success': True, 'message': '删除成功'})
 
 
+@file_bp.route('/files/<file_id>/md', methods=['DELETE'])
+def delete_md(file_id):
+    """只删除转换后的 md 文件，保留原始文件"""
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT md_path FROM uploaded_files WHERE id = ?', (file_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    md_path = row['md_path']
+    if not md_path:
+        conn.close()
+        return jsonify({'success': False, 'message': '没有已转换的 md 文件'}), 400
+
+    try:
+        if os.path.exists(md_path):
+            os.remove(md_path)
+        cursor.execute("UPDATE uploaded_files SET md_path='' WHERE id=?", (file_id,))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'message': f'删除 md 文件失败: {e}'}), 500
+
+    conn.close()
+    return jsonify({'success': True, 'message': 'md 文件已删除'})
+
+
 @file_bp.route('/files/scan-disk', methods=['POST'])
 def scan_disk():
     """扫描磁盘上的文件，补齐数据库中缺失的记录"""
@@ -276,9 +310,15 @@ def list_files():
 
     rows = cursor.fetchall()
 
-    # 自动清理：文件已不存在的记录从数据库中删除
+    # 自动清理：文件已不存在的记录从数据库中删除，md 不存在的清空标记
     valid_files = []
     for row in rows:
+        if row['md_path'] and not os.path.exists(row['md_path']):
+            cursor.execute("UPDATE uploaded_files SET md_path='' WHERE id=?", (row['id'],))
+            row = cursor.execute(
+                'SELECT id, original_name, saved_path, category, upload_time, md_path FROM uploaded_files WHERE id=?',
+                (row['id'],)
+            ).fetchone()
         if os.path.exists(row['saved_path']):
             valid_files.append(dict(row))
         else:

@@ -486,6 +486,8 @@ def extract_hierarchy(content):
     current_chapter = None
     current_section = None
 
+    current_page = None  # 当前页码，章节标题设置后透传给工序
+    prev_end = 0
     for i in range(len(matches)):
         raw_title = matches[i].group(2).strip()
         full_text = matches[i].group(0).strip()
@@ -498,20 +500,56 @@ def extract_hierarchy(content):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
         sec_content = content[start:end].strip()
 
-        if re.match(r'^第[一二三四五六七八九十廿卅\d]+册', struct_text):
+        # 1. 收集 pre_content + sec_content 中所有页码
+        pre_content = content[prev_end:matches[i].start()]
+        all_pages = []
+        for p in re.finditer(r'<!-- PAGE:(\d+) -->', pre_content):
+            all_pages.append(int(p.group(1)))
+        for p in re.finditer(r'<!-- PAGE:(\d+) -->', sec_content):
+            all_pages.append(int(p.group(1)))
+        prev_end = end
+
+        # 2. 判断标题类型
+        is_volume = re.match(r'^第[一二三四五六七八九十廿卅\d]+册', struct_text)
+        is_chapter = re.match(r'^第[一二三四五六七八九十廿卅\d]+章', struct_text)
+        is_section = re.match(r'^第[一二三四五六七八九十廿卅\d]+节', struct_text)
+        is_structure = is_volume or is_chapter or is_section
+
+        # 3. 计算当前标题的起始页码
+        if all_pages:
+            page_min = min(all_pages)
+            page_max = max(all_pages)
+            if current_page is not None and not is_structure:
+                # 工序：起始页 = min(自己找到的最小页码, 前面章节透传的页码)
+                title_page_num = min(page_min, current_page)
+            else:
+                # 册/章/节：用自己的页码（不受前文干扰）
+                title_page_num = page_min
+            # 更新透传页码
+            if current_page is not None:
+                current_page = max(page_max, current_page)
+            else:
+                current_page = page_max
+        elif not is_structure and is_valid_process_title(title, sec_content):
+            # 工序没找到页码 → 沿用前面章节透传的页码
+            title_page_num = current_page
+        else:
+            title_page_num = None
+
+        if is_volume:
             if not hierarchy["册名"]:  # 只取第一个出现的册名
                 hierarchy["册名"] = remove_title_prefix(struct_text)
             current_chapter = None
             current_section = None
             continue
 
-        if re.match(r'^第[一二三四五六七八九十廿卅\d]+章', struct_text):
+        if is_chapter:
             current_chapter = {"名称": remove_title_prefix(struct_text), "直接工序": []}
             hierarchy["章节"].append(current_chapter)
             current_section = None
             continue
 
-        if re.match(r'^第[一二三四五六七八九十廿卅\d]+节', struct_text):
+        if is_section:
             current_section = {"名称": remove_title_prefix(struct_text), "直接工序": []}
             if current_chapter:
                 if "节" not in current_chapter:
@@ -542,8 +580,19 @@ def extract_hierarchy(content):
                 unit_raw = unit_match.group(1)
                 unit = clean_text(re.sub(r'<.*', '', unit_raw))
 
+            # 逐个表格提取并定位页码
             table_pat = re.compile(r'<table[^>]*>.*?</table>', re.S | re.I)
-            tables = table_pat.findall(sec_content)
+            tables_with_page = []
+            for tab_match in table_pat.finditer(sec_content):
+                tab_html = tab_match.group(0)
+                # 取该表格之前最近的 PAGE 标记作为此表格的页码
+                content_before = sec_content[:tab_match.start()]
+                prev_pages = re.findall(r'<!-- PAGE:(\d+) -->', content_before)
+                if prev_pages:
+                    tab_page = int(prev_pages[-1])
+                else:
+                    tab_page = title_page_num  # 没有则用工序的起始页
+                tables_with_page.append({"html": tab_html, "页码": tab_page})
 
             clean_process_title = remove_process_number_prefix(title)
 
@@ -551,7 +600,8 @@ def extract_hierarchy(content):
                 "名称": clean_process_title,
                 "工作内容": work,
                 "计量单位": unit,
-                "tables": tables
+                "tables": tables_with_page,
+                "页码": title_page_num
             }
             parent["直接工序"].append(proc)
 
@@ -868,9 +918,12 @@ def extract_all(hierarchy):
                     proc_id = get_unique_process_id(proc["名称"])
 
                     all_quotas = []
-                    for table in proc["tables"]:
+                    for table_item in proc["tables"]:
                         try:
-                            q, _ = parse_table(table, proc["名称"])
+                            q, _ = parse_table(table_item["html"], proc["名称"])
+                            tab_page = table_item.get("页码")
+                            for quota in q:
+                                quota["_页码"] = tab_page
                             all_quotas.extend(q)
                         except Exception as e:
                             print(f"解析表格失败：{proc['名称']} - {str(e)}")
@@ -900,7 +953,12 @@ def extract_all(hierarchy):
                                     existing["资源数据"].append(d)
 
                     for code, q in unique_quotas.items():
-                        entities["定额编号"][code] = {k: v for k, v in q.items() if k not in ["定额编号", "资源数据"]}
+                        quota_attrs = {k: v for k, v in q.items() if k not in ["定额编号", "资源数据", "_页码"]}
+                        if q.get("_页码"):
+                            quota_attrs["页码"] = q["_页码"]
+                        elif proc.get("页码"):
+                            quota_attrs["页码"] = proc["页码"]
+                        entities["定额编号"][code] = quota_attrs
                         relations.append({
                             "源实体类型": "工序", "源实体ID": proc_id,
                             "关系类型": "包含定额",
@@ -967,9 +1025,12 @@ def extract_all(hierarchy):
             proc_id = get_unique_process_id(proc["名称"])
 
             all_quotas = []
-            for table in proc["tables"]:
+            for table_item in proc["tables"]:
                 try:
-                    q, _ = parse_table(table, proc["名称"])
+                    q, _ = parse_table(table_item["html"], proc["名称"])
+                    tab_page = table_item.get("页码")
+                    for quota in q:
+                        quota["_页码"] = tab_page
                     all_quotas.extend(q)
                 except Exception as e:
                     print(f"解析表格失败：{proc['名称']} - {str(e)}")
@@ -999,7 +1060,10 @@ def extract_all(hierarchy):
                             existing["资源数据"].append(d)
 
             for code, q in unique_quotas.items():
-                entities["定额编号"][code] = {k: v for k, v in q.items() if k not in ["定额编号", "资源数据"]}
+                quota_attrs = {k: v for k, v in q.items() if k not in ["定额编号", "资源数据", "_页码"]}
+                if q.get("_页码"):
+                    quota_attrs["页码"] = q["_页码"]
+                entities["定额编号"][code] = quota_attrs
                 relations.append({
                     "源实体类型": "工序", "源实体ID": proc_id,
                     "关系类型": "包含定额",
@@ -1176,14 +1240,14 @@ def import_graph_data(nodes, relations, db_path=None, reset_tables=True):
         VALUES (?, ?, ?, ?, ?)
         ''', rel_data)
 
-        # 追加写入累积表（使用 INSERT OR IGNORE 自动去重）
+        # 写入累积表（使用 INSERT OR REPLACE 确保每次都是最新数据）
         cursor.executemany('''
-        INSERT OR IGNORE INTO graph_nodes_archive (entity_type, entity_id, attributes)
+        INSERT OR REPLACE INTO graph_nodes_archive (entity_type, entity_id, attributes)
         VALUES (?, ?, ?)
         ''', node_data)
 
         cursor.executemany('''
-        INSERT OR IGNORE INTO graph_relations_archive (source_type, source_id, relation_type, target_type, target_id)
+        INSERT OR REPLACE INTO graph_relations_archive (source_type, source_id, relation_type, target_type, target_id)
         VALUES (?, ?, ?, ?, ?)
         ''', rel_data)
 
@@ -1256,7 +1320,8 @@ def query_quotas(db_path=None):
             json_extract(q.attributes, '$.人工费(元)') AS 人工费,
             json_extract(q.attributes, '$.材料费(元)') AS 材料费,
             json_extract(q.attributes, '$.机械费(元)') AS 机械费,
-            json_extract(ld.attributes, '$.人工明细[0].使用数量') AS 合计工日
+            json_extract(ld.attributes, '$.人工明细[0].使用数量') AS 合计工日,
+            json_extract(q.attributes, '$.页码') AS 页码
         FROM graph_nodes proc
         LEFT JOIN graph_relations rproc
             ON rproc.target_id = proc.entity_id
@@ -1330,6 +1395,7 @@ def query_quotas(db_path=None):
             material_price = _to_number(row[9])
             machine_price = _to_number(row[10])
             total_days = _to_number(row[11])
+            quota_page = row[12] if row[12] is not None else None
 
             tool_cost = 0.0
             for cost_value in (material_price, machine_price):
@@ -1361,6 +1427,7 @@ def query_quotas(db_path=None):
                 "machineCost": machine_price,
                 "toolCost": tool_cost if tool_cost else None,
                 "manHours": total_days,
+                "page": int(quota_page) if quota_page is not None else None,
             })
 
         print(f"\n查询完成，共显示 {len(rows)} 条定额信息")

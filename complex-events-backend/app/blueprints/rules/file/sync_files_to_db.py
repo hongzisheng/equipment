@@ -118,6 +118,24 @@ def scan_and_sync():
         return {'success': False, 'message': f'数据库不存在: {DB_PATH}'}
 
     conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+
+    # ---- 清理：磁盘上已删除的文件，从数据库中清除 ----
+    cleaned_orphans = 0       # saved_path 不存在的记录 → 删除整条
+    cleaned_md_stale = 0      # md_path 不存在的记录 → 清空 md_path
+
+    orphan_rows = conn.execute(
+        "SELECT id, saved_path, md_path FROM uploaded_files"
+    ).fetchall()
+    for r in orphan_rows:
+        if r['saved_path'] and not os.path.exists(r['saved_path']):
+            conn.execute("DELETE FROM uploaded_files WHERE id=?", (r['id'],))
+            cleaned_orphans += 1
+        elif r['md_path'] and not os.path.exists(r['md_path']):
+            conn.execute("UPDATE uploaded_files SET md_path='' WHERE id=?", (r['id'],))
+            cleaned_md_stale += 1
+    conn.commit()
+
     existing_by_path, existing_by_stem = _existing_index(conn)
 
     new_quota = _scan_folder(QUOTA_DIR, '定额', conn, existing_by_path)
@@ -139,12 +157,18 @@ def scan_and_sync():
         detail_parts.append(f'新增 {", ".join(parts)}')
     if matched_md:
         detail_parts.append(f'匹配 md {len(matched_md)} 个')
-    detail = '；'.join(detail_parts) if detail_parts else '无新增'
+    if cleaned_orphans:
+        detail_parts.append(f'清理失效记录 {cleaned_orphans} 条')
+    if cleaned_md_stale:
+        detail_parts.append(f'清除失效 md 标记 {cleaned_md_stale} 个')
+    detail = '；'.join(detail_parts) if detail_parts else '无变化'
 
     return {
         'success': True,
         'new_records': total_new,
         'matched_md': len(matched_md),
+        'cleaned_orphans': cleaned_orphans,
+        'cleaned_md_stale': cleaned_md_stale,
         'message': detail,
     }
 

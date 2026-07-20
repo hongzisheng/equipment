@@ -1,9 +1,18 @@
 <template>
-  <el-card class="import-card" shadow="hover">
-    <h2 class="title">规则库</h2>
+  <div class="rulebase-page">
+    <el-card class="import-card" shadow="hover">
+    <div class="title-row">
+      <h2 class="title">规则库</h2>
+      <el-radio-group v-model="activeTab" class="tab-switch">
+        <el-radio-button value="process">工序规则数据</el-radio-button>
+        <el-radio-button value="worker">工种计费规则</el-radio-button>
+        <el-radio-button value="tree">知识结构树</el-radio-button>
+        <el-radio-button value="search">搜索区</el-radio-button>
+      </el-radio-group>
+    </div>
 
-    <!-- 添加设备查询组件 -->
-    <div class="equipment-search-container">
+    <!-- 工序规则查询 -->
+    <div v-show="activeTab === 'process'" class="equipment-search-container">
       <h3 class="search-title">规则查询</h3>
       <el-form :model="filterForm" class="search-form" label-width="120px" size="default">
         <el-form-item label="设备种类">
@@ -25,6 +34,7 @@
   
 
     <el-upload
+      v-show="activeTab === 'process'"
       ref="uploadRef"
       class="upload-custom"
       :action="uploadUrl"
@@ -45,7 +55,7 @@
     </el-upload>
 
     <!-- 进度条显示上传进度与状态 -->
-    <div v-if="progressVisible" class="progress-wrap">
+    <div v-if="progressVisible && activeTab === 'process'" class="progress-wrap">
       <el-progress :percentage="progressPercent" :status="progressStatus" :stroke-width="14" />
       <div class="progress-text">{{ progressText }}</div>
     </div>
@@ -68,8 +78,8 @@
       @confirm="confirmImport"
     />
     
-    <!-- 第一层：规则数据表格 -->
-    <div class="rule-table-section">
+    <!-- 工序规则数据 -->
+    <div v-show="activeTab === 'process'" class="rule-table-section">
       <div class="section-header">
         <h3>工序规则数据列表</h3>
       </div>
@@ -121,8 +131,8 @@
       </div>
     </div>
 
-    <!-- 新增：工种计费规则列表 -->
-    <div class="worker-price-section">
+    <!-- 工种计费规则 -->
+    <div v-show="activeTab === 'worker'" class="worker-price-section">
       <div class="section-header">
         <h3>工种计费规则</h3>
         <el-button type="primary" size="small" @click="handleAddWorker">新增工种</el-button>
@@ -131,7 +141,7 @@
         :data="paginatedWorkerTypes"
         v-loading="loadingWorkers"
         stripe
-        height="400"
+        height="600"
         style="width: 100%"
       >
         <el-table-column prop="id" label="工种ID" width="150" />
@@ -560,7 +570,7 @@
     <el-dialog
       v-model="workerDialogVisible"
       :title="editingWorker ? '编辑工种' : '新增工种'"
-      width="500px"
+      width="50%"
       top="10vh"
     >
       <el-form :model="workerForm" label-width="100px">
@@ -587,7 +597,7 @@
     </el-dialog>
     
       <!-- 底部功能图标区 -->
-    <div class="bottom-function-icons">
+    <div v-show="activeTab === 'process'" class="bottom-function-icons">
       <!-- 图标1：下载模板 -->
       <div class="icon-item" @click="downloadTemplate" title="下载Excel模板">
         <img src="@/assets/iconfont/下载.png" class="function-icon" alt="下载Excel模板" />
@@ -598,7 +608,17 @@
       </div>
     </div>
 
+    <!-- 知识结构树 -->
+    <div v-show="activeTab === 'tree'">
+      <StructureTree />
+    </div>
+
+    <!-- 搜索区 -->
+    <div v-show="activeTab === 'search'">
+      <SearchPage />
+    </div>
   </el-card>
+  </div>
 </template>
 
 <script setup>
@@ -607,7 +627,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import ExcelEditor from './ExcelEditor.vue'
 import request from '@/utils/request'
+import StructureTree from '@/views/rules/structuretree/index.vue'
+import SearchPage from '@/views/rules/search/index.vue'
 
+const activeTab = ref('process')
 const uploading = ref(false)
 const uploadRef = ref()
 const selectedFile = ref(null)
@@ -1701,38 +1724,57 @@ async function submitAddProcess() {
   padding-bottom: 16px;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.tab-switch :deep(.el-radio-button__inner) {
+  font-size: 17px;
+  padding: 12px 32px;
+}
+
 .title {
   margin: 8px 0 16px 0;
+  font-size: 24px;
   font-weight: 600;
 }
 
 /* 设备查询组件样式 */
 .equipment-search-container {
   margin: 20px 0;
-  padding: 20px;
+  padding: 24px;
   border: 1px solid #ebeef5;
   border-radius: 8px;
   background: #fafafa;
 }
 .search-title {
   margin: 0 0 16px 0;
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
   color: #303133;
 }
 .search-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 20px;
   align-items: center;
 }
 .search-input, .search-select, .search-date {
-  width: 220px;
+  width: 280px;
 }
 .search-btn-group {
   margin-left: auto;
   display: flex;
   gap: 8px;
+}
+
+/* 查询/重置按钮字体放大 */
+.search-btn-group :deep(.el-button) {
+  font-size: 15px;
+  padding: 9px 22px;
 }
 
 /* 底部功能图标区样式 */
@@ -1753,8 +1795,8 @@ async function submitAddProcess() {
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   justify-content: center;
   position: relative;
 }
@@ -1773,7 +1815,7 @@ async function submitAddProcess() {
   color: white;
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
   z-index: 1000;
   margin-bottom: 8px;
@@ -1791,8 +1833,8 @@ async function submitAddProcess() {
 .function-icon {
   font-size: 20px;
   color: #409eff;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 .icon-item:hover .function-icon {
   color: #1890ff; /* 悬停时图标变为深蓝色 */
@@ -1824,6 +1866,7 @@ async function submitAddProcess() {
 
 .section-header h3 {
   margin: 0;
+  font-size: 17px;
   font-weight: 600;
   color: #303133;
 }
@@ -1834,9 +1877,37 @@ async function submitAddProcess() {
   text-align: right;
 }
 
+/* 分页组件字体放大 */
+.pagination :deep(.el-pagination) {
+  font-size: 15px;
+}
+
+.pagination :deep(.el-pager li) {
+  font-size: 15px;
+  min-width: 36px;
+  height: 36px;
+  line-height: 36px;
+}
+
+.pagination :deep(.el-pagination__total) {
+  font-size: 15px;
+}
+
+/* 表格全局字体放大 */
+:deep(.el-table) {
+  font-size: 15px;
+}
+
+/* 表格列头字体放大 */
+:deep(.el-table__header th) {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
 /* 增加表格行高 */
 :deep(.el-table__row) {
-  height: 50px;
+  height: 60px;
 }
 
 /* 为M开头的工序行设置深色背景 */
@@ -1867,6 +1938,7 @@ async function submitAddProcess() {
   padding: 2px 4px;
   border-radius: 3px;
   background-color: #f5f7fa;
+  font-size: 14px;
 }
 
 .worker-item:last-child {
@@ -1876,16 +1948,19 @@ async function submitAddProcess() {
 .worker-type {
   font-weight: 500;
   color: #303133;
+  font-size: 14px;
 }
 
 .worker-count {
   color: #606266;
   margin-left: 4px;
+  font-size: 14px;
 }
 
 .no-workers {
   color: #909399;
   font-style: italic;
+  font-size: 14px;
 }
 
 /* 物料需求样式 */
@@ -1894,6 +1969,7 @@ async function submitAddProcess() {
   padding: 2px 4px;
   border-radius: 3px;
   background-color: #f5f7fa;
+  font-size: 14px;
 }
 
 .material-item:last-child {
@@ -1903,6 +1979,7 @@ async function submitAddProcess() {
 .no-materials {
   color: #909399;
   font-style: italic;
+  font-size: 14px;
 }
 
 /* 工具需求样式 */
@@ -1911,6 +1988,7 @@ async function submitAddProcess() {
   padding: 2px 4px;
   border-radius: 3px;
   background-color: #f5f7fa;
+  font-size: 14px;
 }
 
 .tool-item:last-child {
@@ -1920,6 +1998,7 @@ async function submitAddProcess() {
 .no-tools {
   color: #909399;
   font-style: italic;
+  font-size: 14px;
 }
 
 /* 工种编辑样式 */
@@ -1934,11 +2013,58 @@ async function submitAddProcess() {
   padding: 5px;
   border: 1px solid #ebeef5;
   border-radius: 4px;
+  font-size: 15px;
 }
 
 .worker-type-name {
   font-weight: 500;
   flex: 1;
+  font-size: 15px;
+}
+
+/* ========== 弹窗 / 对话框字体放大 ========== */
+
+/* el-dialog 标题放大 */
+:deep(.el-dialog__title) {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* 弹窗表单 label 放大 */
+:deep(.el-dialog .el-form-item__label) {
+  font-size: 16px !important;
+  font-weight: 500;
+}
+
+/* 弹窗 input 输入框字体放大 */
+:deep(.el-dialog .el-input__inner) {
+  font-size: 15px;
+}
+
+/* 弹窗 textarea 字体放大 */
+:deep(.el-dialog .el-textarea__inner) {
+  font-size: 15px;
+}
+
+/* 弹窗内 el-input-number 字体放大 */
+:deep(.el-dialog .el-input-number .el-input__inner) {
+  font-size: 15px;
+}
+
+/* 弹窗 footer 按钮字体放大 */
+:deep(.el-dialog .el-dialog__footer .el-button) {
+  font-size: 15px;
+  padding: 9px 22px;
+}
+
+/* 弹窗 body 内边距微调 */
+:deep(.el-dialog .el-dialog__body) {
+  padding: 20px 24px;
+}
+
+/* 工序弹窗（90%宽度大弹窗）内 el-input 字体放大 */
+.process-dialog-wide :deep(.el-input__inner) {
+  font-size: 15px;
 }
 
 @media (max-width: 920px) {

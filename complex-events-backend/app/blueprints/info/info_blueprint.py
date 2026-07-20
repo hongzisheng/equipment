@@ -18,23 +18,68 @@ def get_workers():
                     w.name,
                     w.worker_type_id AS role,
                     w.status,
-                    w.organization
+                    w.organization,
+                    COALESCE(wt.name, w.worker_type_id) AS role_name
                 FROM workers w
+                LEFT JOIN worker_types wt ON w.worker_type_id = wt.id
                 ORDER BY w.id
             """)
             
             rows = cursor.fetchall()
             
+            cursor.execute("""
+                SELECT 
+                    wtw.worker_id,
+                    wtw.task_id,
+                    wtw.status AS assignment_status,
+                    wtw.worker_name,
+                    wtw.worker_type,
+                    wot.id AS work_order_task_id,
+                    wot.process_name AS task_name,
+                    wot.status AS task_status,
+                    wot.task_code,
+                    wot.scheduled_start_time AS start_time,
+                    wot.scheduled_end_time AS end_time,
+                    wo.equipment_name,
+                    wo.equipment_id
+                FROM work_order_task_workers wtw
+                LEFT JOIN work_order_tasks wot ON wtw.task_id = wot.id
+                LEFT JOIN work_orders wo ON wot.work_order_id = wo.id
+                ORDER BY wtw.worker_id, wtw.task_id
+            """)
+            
+            task_rows = cursor.fetchall()
+            
+            worker_tasks_map = {}
+            for task_row in task_rows:
+                worker_id = task_row["worker_id"]
+                if worker_id not in worker_tasks_map:
+                    worker_tasks_map[worker_id] = []
+                worker_tasks_map[worker_id].append({
+                    "task_id": task_row["task_id"],
+                    "task_name": task_row["task_name"] or task_row["task_code"] or "未知任务",
+                    "status": task_row["task_status"] or task_row["assignment_status"],
+                    "equipment": task_row["equipment_name"] or "未知设备",
+                    "start_time": task_row["start_time"] or "",
+                    "end_time": task_row["end_time"] or "",
+                    "work_order_code": task_row["task_code"] or ""
+                })
+            
             worker_status_list = []
             for row in rows:
+                worker_id = row["id"]
+                tasks = worker_tasks_map.get(worker_id, [])
+                has_active_tasks = any(t["status"] not in ("completed", "confirmed", "cancelled") for t in tasks)
+                status_text = "工作中" if has_active_tasks else ("空闲中" if len(tasks) == 0 else "已完成")
+                
                 worker_status_list.append({
-                    "id": row["id"],
+                    "id": worker_id,
                     "name": row["name"],
-                    "role": row["role"],
-                    "status": "工作中" if row["status"] == "1" else ("空闲中" if row["status"] == "0" else row["status"]),
+                    "role": row["role_name"] or row["role"],
+                    "status": status_text,
                     "organization": row["organization"],
                     "skill_level": "高级",
-                    "tasks": []
+                    "tasks": tasks
                 })
             
             return Result.success(message="查询成功", data={"worker_status": worker_status_list})

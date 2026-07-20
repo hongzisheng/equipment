@@ -4,19 +4,9 @@
       <div class="page-header">
         <div class="title-block">
           <div class="page-title">知识结构树</div>
-          <div class="page-subtitle">基于设备分类的知识体系结构，默认展示根节点与一级分类，点击分类展开下级设备</div>
+          <div class="page-subtitle">基于设备分类的知识体系结构</div>
         </div>
         <div class="header-tools">
-          <el-button-group class="view-switch">
-            <el-button :type="viewMode === 'tree' ? 'primary' : 'default'" @click="viewMode = 'tree'">
-              <el-icon><Share /></el-icon>
-              结构视图
-            </el-button>
-            <el-button :type="viewMode === 'list' ? 'primary' : 'default'" @click="viewMode = 'list'">
-              <el-icon><Tickets /></el-icon>
-              列表视图
-            </el-button>
-          </el-button-group>
           <el-button @click="updateData" :loading="loading">
             <el-icon><Refresh /></el-icon>
             更新数据
@@ -24,10 +14,6 @@
           <el-button @click="exportStructure">
             <el-icon><Download /></el-icon>
             导出结构
-          </el-button>
-          <el-button @click="toggleFullscreen">
-            <el-icon><FullScreen /></el-icon>
-            {{ isFullscreen ? '退出全屏' : '全屏展示' }}
           </el-button>
         </div>
       </div>
@@ -39,49 +25,20 @@
           <span class="legend-item"><i class="dot dot-orange"></i>设备名称</span>
         </div>
         <div class="legend-actions">
-          <!-- 缩放工具栏：仅在树形视图下显示 -->
-          <div class="zoom-tools" v-if="viewMode === 'tree'">
-            <el-button circle :disabled="zoomPercent <= zoomMin" @click="zoomOut">
-              <el-icon><Minus /></el-icon>
-            </el-button>
-            <span class="zoom-percent">{{ zoomPercent }}%</span>
-            <el-button circle :disabled="zoomPercent >= zoomMax" @click="zoomIn">
-              <el-icon><Plus /></el-icon>
-            </el-button>
-            <el-button circle @click="resetZoom" title="重置缩放">
-              <el-icon><RefreshRight /></el-icon>
-            </el-button>
-            <el-button circle @click="fitToView" title="适配画布">
-              <el-icon><FullScreen /></el-icon>
-            </el-button>
-          </div>
-
-          <!-- 定位根节点按钮：仅树形视图有效 -->
-          <el-button circle @click="centerOnRootNode" title="定位根节点">
-            <el-icon><Aim /></el-icon>
-          </el-button>
-
           <el-button link type="primary" @click="expandAll">
             <el-icon><Plus /></el-icon> 展开全部
           </el-button>
           <el-button link type="primary" @click="collapseAll">
             <el-icon><Minus /></el-icon> 收起全部
           </el-button>
+          <el-button link type="primary" @click="centerOnRootNode">
+            <el-icon><Aim /></el-icon> 回到根节点
+          </el-button>
         </div>
       </div>
 
       <div class="tree-stage">
-        <div
-          class="tree-stage-inner"
-          :class="{ 'list-mode': viewMode === 'list' }"
-          ref="treeStageRef"
-          v-loading="loading"
-          @mousedown="handleDragStart"
-          @mousemove="handleDragMove"
-          @mouseup="handleDragEnd"
-          @mouseleave="handleDragEnd"
-          @wheel="handleWheel"
-        >
+        <div class="tree-stage-inner list-mode" v-loading="loading">
           <div v-if="!loading && categoryNodes.length === 0" class="empty-state">
             <el-empty v-if="!backendConnected" description="后端服务未连接">
               <template #image>
@@ -92,78 +49,6 @@
               </el-button>
             </el-empty>
             <el-empty v-else description="暂无设备分类数据" />
-          </div>
-
-          <!-- 树形 SVG 视图 -->
-          <div v-else-if="viewMode === 'tree'" class="tree-canvas" ref="treeCanvasRef">
-            <svg
-              :width="svgWidth"
-              :height="svgHeight"
-              :viewBox="`${-viewX} ${-viewY} ${svgWidth / zoomScaleValue} ${svgHeight / zoomScaleValue}`"
-            >
-              <g>
-                <path
-                  v-for="link in computedLinks"
-                  :key="link.key"
-                  :d="link.path"
-                  fill="none"
-                  stroke="#93a3c0"
-                  stroke-width="2.5"
-                  :class="{ 'no-transition': disableTransitions }"
-                />
-                <g
-                  v-for="node in layoutNodes"
-                  :key="node.id"
-                  :transform="`translate(${node.y},${node.x})`"
-                  :class="['node-group', { 'no-transition': disableTransitions }]"
-                  @click.stop="handleNodeClick(node)"
-                >
-                  <title>{{ node.label }}</title>
-                  <rect
-                    :x="-nodeWidth / 2"
-                    :y="-nodeHeight / 2"
-                    :width="nodeWidth"
-                    :height="nodeHeight"
-                    :rx="8"
-                    :ry="8"
-                    :fill="nodeBgColor(node)"
-                    :stroke="nodeStrokeColor(node)"
-                    stroke-width="2"
-                    style="cursor:pointer"
-                  />
-                  <text
-                    dy="0.35em"
-                    text-anchor="middle"
-                    font-size="12"
-                    fill="#1f2937"
-                    style="pointer-events:none"
-                  >
-                    {{ truncateLabel(node.label, 7) }}
-                  </text>
-                  <template v-if="hasVisibleChildren(node)">
-                    <circle
-                      :cx="nodeWidth / 2 - 6"
-                      :cy="-nodeHeight / 2 + 6"
-                      r="8"
-                      fill="white"
-                      stroke="#cbd5e1"
-                      stroke-width="1.5"
-                    />
-                    <text
-                      :x="nodeWidth / 2 - 6"
-                      :y="-nodeHeight / 2 + 6"
-                      dy="0.35em"
-                      text-anchor="middle"
-                      font-size="10"
-                      fill="#1f2937"
-                      style="pointer-events:none"
-                    >
-                      {{ getVisibleChildrenCount(node) }}
-                    </text>
-                  </template>
-                </g>
-              </g>
-            </svg>
           </div>
 
           <!-- 列表视图 -->
@@ -215,7 +100,7 @@ import request from '@/utils/request'
 const CACHE_KEY = 'knowledge_tree_cache'
 const CACHE_EXPIRE_HOURS = 24
 
-const viewMode = ref('tree')
+const viewMode = ref('list')
 const loading = ref(false)
 const categoryNodes = ref([])
 const collapsedNodeIds = ref(new Set())
@@ -691,24 +576,10 @@ const toggleFullscreen = async () => {
 }
 
 onMounted(() => {
-  initTreeLayout()
-  if (treeStageRef.value) {
-    resizeObserver = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        svgWidth.value = entry.contentRect.width
-        svgHeight.value = entry.contentRect.height
-      }
-    })
-    resizeObserver.observe(treeStageRef.value)
-  }
-  fullscreenChangeListener = handleFullscreenChange
-  document.addEventListener('fullscreenchange', fullscreenChangeListener)
   loadTree(false)
 })
 
 onUnmounted(() => {
-  if (resizeObserver) resizeObserver.disconnect()
-  if (fullscreenChangeListener) document.removeEventListener('fullscreenchange', fullscreenChangeListener)
   if (layoutRAF) cancelAnimationFrame(layoutRAF)
 })
 
@@ -951,15 +822,15 @@ const updateData = () => loadTree(true)
 <style scoped>
 .knowledge-tree-page { padding: 16px; height: 100%; box-sizing: border-box; background: linear-gradient(180deg, #f5f7fb 0%, #eef3fb 100%); overflow: hidden; }
 .page-card { height: 100%; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: #fff; }
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #eef2f7; flex-shrink: 0; }
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 26px 18px; border-bottom: 1px solid #eef2f7; flex-shrink: 0; }
 .title-block { min-width: 0; }
-.page-title { font-size: 20px; font-weight: 800; color: #1f2937; }
-.page-subtitle { margin-top: 6px; color: #7a869a; font-size: 13px; }
+.page-title { font-size: 24px; font-weight: 800; color: #1f2937; }
+.page-subtitle { margin-top: 6px; color: #7a869a; font-size: 15px; }
 .header-tools { display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap; }
 .view-switch :deep(.el-button) { min-width: 110px; }
 .legend-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px 8px; flex-shrink: 0; flex-wrap: wrap; }
 .legend-items { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; }
-.legend-item { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #46556c; }
+.legend-item { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; color: #46556c; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot-blue { background: #3b82f6; }
 .dot-green { background: #22c55e; }
@@ -967,15 +838,15 @@ const updateData = () => loadTree(true)
 .legend-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .zoom-tools { display: flex; align-items: center; gap: 10px; }
 .zoom-percent { min-width: 52px; text-align: center; color: #475569; font-weight: 600; }
-.tree-stage { box-sizing: border-box; padding: 8px 18px 18px; min-height: 850px; height: 850px; }
+.tree-stage { box-sizing: border-box; padding: 8px 18px 18px; min-height: 900px; height: 900px; }
 .tree-stage-inner { height: 100%; border-radius: 16px; border: 1px solid #e7edf5; background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%); overflow: hidden; cursor: grab; position: relative; }
 .tree-stage-inner:active { cursor: grabbing; }
 .tree-stage-inner.list-mode { cursor: default; }
 .tree-canvas { width: 100%; height: 100%; }
 .empty-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .page-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px 18px; flex-shrink: 0; border-top: 1px solid #eef2f7; flex-wrap: wrap; }
-.footer-summary { color: #64748b; font-size: 13px; }
-.footer-update-info { color: #94a3b8; font-size: 12px; }
+.footer-summary { color: #64748b; font-size: 15px; }
+.footer-update-info { color: #94a3b8; font-size: 14px; }
 .node-group { transition: transform 0.3s ease-in-out; }
 path { transition: d 0.3s ease-in-out; }
 .no-transition { transition: none !important; }
@@ -991,7 +862,7 @@ path { transition: d 0.3s ease-in-out; }
   background: transparent;
 }
 .list-view-container .el-tree-node__content {
-  height: 40px;
+  height: 48px;
   border-bottom: 1px solid #f0f4f9;
   transition: background 0.15s;
 }
@@ -1002,7 +873,7 @@ path { transition: d 0.3s ease-in-out; }
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 14px;
+  font-size: 16px;
   color: #1f2937;
   width: 100%;
 }
@@ -1011,12 +882,12 @@ path { transition: d 0.3s ease-in-out; }
 }
 .list-node-count {
   color: #7a869a;
-  font-size: 12px;
+  font-size: 14px;
 }
 .list-node-depth {
   margin-left: auto;
   color: #b0bccd;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 @media (max-width: 1200px) {

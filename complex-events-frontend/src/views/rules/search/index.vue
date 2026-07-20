@@ -84,9 +84,9 @@
             <el-table-column prop="process" label="工序" min-width="150" />
             <el-table-column prop="measure_dimension" label="计量维度" min-width="160" />
             <el-table-column prop="measure_value" label="计量值" min-width="100" />
-            <el-table-column prop="man_hours" label="需要的人工(工日)" min-width="160" />
-            <el-table-column prop="labor_cost" label="工人费用(元)" min-width="140" />
-            <el-table-column prop="tool_cost" label="机具费用(元)" min-width="140" />
+            <el-table-column prop="man_hours" label="需要的人工(工日)" min-width="110" />
+            <el-table-column prop="labor_cost" label="工人费用(元)" min-width="100" />
+            <el-table-column prop="tool_cost" label="机具费用(元)" min-width="100" />
           </el-table>
         </div>
       </div>
@@ -325,15 +325,15 @@ onMounted(() => {
 }
 
 .section-title {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
-  margin: 0;
+  margin: 0 0 18px 0;
   color: #1e293b;
 }
 
 .search-area {
   background: #fff;
-  padding: 24px;
+  padding: 28px;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
   flex: 0 0 auto;
@@ -341,7 +341,7 @@ onMounted(() => {
 
 .results-area {
   background: #fff;
-  padding: 20px;
+  padding: 24px;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
   display: flex;
@@ -363,7 +363,7 @@ onMounted(() => {
 }
 
 .results-count {
-  font-size: 13px;
+  font-size: 15px;
   color: #64748b;
 }
 
@@ -373,14 +373,14 @@ onMounted(() => {
 
 /* 表单样式 */
 .search-area :deep(.el-form-item__label) {
-  font-size: 14px !important;
+  font-size: 16px !important;
   text-align: left !important;
   font-weight: 500;
   color: #475569;
 }
 
 .search-area :deep(.el-input__inner) {
-  font-size: 14px !important;
+  font-size: 16px !important;
 }
 
 .search-area :deep(.el-input__wrapper),
@@ -395,17 +395,17 @@ onMounted(() => {
 
 .button-group {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   margin-top: 10px;
 }
 
 .reset-btn {
   flex: 1;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .search-btn {
   flex: 1;
-  font-size: 14px;
+  font-size: 16px;
 }
 </style>

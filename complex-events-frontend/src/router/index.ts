@@ -57,62 +57,35 @@ export const constantRoutes: RouteItem[] = [
     meta: { title: '首页', icon: 'home', affix: true },
 },
   {
-    path: '/worker',
+    path: '/resources',
     component: () => import('@/layout/index.vue'),
     redirect: '/worker/account',
-    name: '工人管理',
-    meta: { title: '工人管理', icon: 'worker' },
+    name: '资源管理',
+    meta: { title: '资源管理', icon: 'resource' },
     children: [
       {
         path: '/worker/account',
         name: '工人台账',
         component: () => import('@/views/worker/account/index.vue'),
-        meta: { title: '工人台账' },
+        meta: { title: '工人台账', icon: 'worker' },
       },
-    ],
-  },
-  {
-    path: '/equipment',
-    component: () => import('@/layout/index.vue'),
-    redirect: '/equipment/account',
-    name: '设备管理',
-    meta: { title: '设备管理', icon: 'equipment' },
-    children: [
       {
         path: '/equipment/account',
         name: '设备台账',
         component: () => import('@/views/equipment/account/index.vue'),
-        meta: { title: '设备台账' },
+        meta: { title: '设备台账', icon: 'equipment' },
       },
-    ],
-  },
-  {
-    path: '/tools',
-    component: () => import('@/layout/index.vue'),
-    redirect: '/tools/account',
-    name: '维修机具管理',
-    meta: { title: '维修机具管理', icon: 'tools' },
-    children: [
       {
         path: '/tools/account',
         name: '维修机具台账',
         component: () => import('@/views/tools/account/index.vue'),
-        meta: { title: '维修机具台账' },
+        meta: { title: '维修机具台账', icon: 'tools' },
       },
-    ],
-  },
-  {
-    path: '/materials',
-    component: () => import('@/layout/index.vue'),
-    redirect: '/materials/account',
-    name: '辅助材料管理',
-    meta: { title: '辅助材料管理', icon: 'material' },
-    children: [
       {
         path: '/materials/account',
         name: '辅助材料台账',
         component: () => import('@/views/materials/account/index.vue'),
-        meta: { title: '辅助材料台账' },
+        meta: { title: '辅助材料台账', icon: 'material' },
       },
     ],
   },
@@ -129,11 +102,11 @@ export const constantRoutes: RouteItem[] = [
         component: () => import('@/views/rules/rulebase/index.vue'),
         meta: { title: '规则库' },
       },
-      {
-        path: '/rules/tree',
-        name: '知识结构树',
-        component: () => import('@/views/rules/structuretree/index.vue'),
-        meta: { title: '知识结构树' },
+        {
+        path: '/rules/file',
+        name: '文件管理',
+        component: () => import('@/views/rules/file/index.vue'),
+        meta: { title: '文件管理' },
       },
       {
         path: '/rules/extraction',
@@ -141,18 +114,7 @@ export const constantRoutes: RouteItem[] = [
         component: () => import('@/views/rules/extraction/index.vue'),
         meta: { title: '知识提取' },
       },
-      {
-        path: '/rules/search',
-        name: '搜索区',
-        component: () => import('@/views/rules/search/index.vue'),
-        meta: { title: '搜索区' },
-      },
-      {
-        path: '/rules/file',
-        name: '文件管理',
-        component: () => import('@/views/rules/file/index.vue'),
-        meta: { title: '文件管理' },
-      },
+
     ],
   },
   {

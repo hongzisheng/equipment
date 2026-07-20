@@ -685,7 +685,7 @@ function onPlanChange(planId) {
   if (planId) {
     const plan = maintenancePlans.value.find(p => p.id === planId)
     if (plan) {
-      ElMessage.info(`已选择检修计划: ${plan.plan_name}`)
+      ElMessage.success(`已选择检修计划: ${plan.plan_name}`)
     }
   }
   // 切换计划时清空当前方案信息

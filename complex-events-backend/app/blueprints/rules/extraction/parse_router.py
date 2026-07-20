@@ -521,5 +521,32 @@ def update_quota():
         conn.close()
 
 
+@parse_blueprint.route('/delete_quota', methods=['POST', 'OPTIONS'])
+def delete_quota():
+    if request.method == 'OPTIONS':
+        return '', 204
+
+    data = request.get_json(silent=True) or {}
+    quota_id = data.get('quotaId')
+    if not quota_id:
+        return jsonify({'ok': False, 'error': 'quotaId required'}), 400
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM graph_nodes WHERE entity_id=? AND entity_type='定额编号'", (quota_id,))
+        cursor.execute("DELETE FROM graph_nodes_archive WHERE entity_id=? AND entity_type='定额编号'", (quota_id,))
+        cursor.execute("DELETE FROM graph_relations WHERE target_id=? AND relation_type='包含定额'", (quota_id,))
+        cursor.execute("DELETE FROM graph_relations_archive WHERE target_id=? AND relation_type='包含定额'", (quota_id,))
+        conn.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
 # 文件上传统一由文件管理模块处理（file_router.py）
 # 知识提取不再单独提供上传和文件服务

@@ -186,12 +186,12 @@
             empty-text="暂无数据"
           >
 <el-table-column type="index" label="#" width="50" align="center" />
-<el-table-column prop="process" label="工序" min-width="150" />
-<el-table-column prop="measurementDimension" label="计量维度" min-width="160" />
-<el-table-column prop="measurementValue" label="计量值" min-width="120" align="center" />
-<el-table-column prop="manHours" label="需要的人工(工日)" min-width="160" align="center" />
-<el-table-column prop="laborCost" label="工人费用(元)" min-width="140" align="center" />
-<el-table-column prop="toolCost" label="机具费用(元)" min-width="140" align="center" />
+<el-table-column prop="process" label="工序" min-width="130" />
+<el-table-column prop="measurementDimension" label="计量维度" min-width="140" />
+<el-table-column prop="measurementValue" label="计量值" min-width="100" align="center" />
+<el-table-column prop="manHours" label="需要的人工(工日)" min-width="110" align="center" />
+<el-table-column prop="laborCost" label="工人费用(元)" min-width="100" align="center" />
+<el-table-column prop="toolCost" label="机具费用(元)" min-width="100" align="center" />
 <el-table-column label="页码" width="70" align="center">
   <template #default="{ row }">
     <el-button
@@ -207,9 +207,10 @@
     <span v-else class="no-page">-</span>
   </template>
 </el-table-column>
-<el-table-column label="操作" width="110" align="center">
+<el-table-column label="操作" width="130" align="center">
   <template #default="{ row }">
     <el-button type="text" size="small" @click="openEdit(row)">编辑</el-button>
+    <el-button type="text" size="small" style="color: #f56c6c; margin-left: 4px;" @click="deleteRow(row)">删除</el-button>
   </template>
 </el-table-column>
           </el-table>
@@ -449,6 +450,37 @@ function openEdit(row) {
     toolCost: row.toolCost || ''
   }
   showEditDialog.value = true
+}
+
+async function deleteRow(row) {
+  if (!row.quotaId) {
+    ElMessage.error('缺少定额编号，无法删除')
+    return
+  }
+  try {
+    const result = await ElMessageBox.confirm(
+      `确定要删除 "${row.process}" 的定额数据吗？`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }
+    )
+    if (result !== 'confirm') return
+  } catch {
+    return // 用户取消
+  }
+
+  try {
+    const resp = await fetch(`${API_BASE}/delete_quota`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quotaId: row.quotaId })
+    })
+    const data = await resp.json()
+    if (!resp.ok || !data.ok) throw new Error(data.error || '删除失败')
+    ElMessage.success('删除成功')
+    await loadQuotaData()
+  } catch (err) {
+    ElMessage.error(`删除失败：${err.message}`)
+  }
 }
 
 async function saveEdit() {
@@ -1078,8 +1110,7 @@ onUnmounted(() => {
 .result-table-container {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
   padding-right: 8px;
 }
 

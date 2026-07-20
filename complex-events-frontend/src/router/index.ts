@@ -129,11 +129,11 @@ export const constantRoutes: RouteItem[] = [
         component: () => import('@/views/rules/rulebase/index.vue'),
         meta: { title: '规则库' },
       },
-      {
-        path: '/rules/tree',
-        name: '知识结构树',
-        component: () => import('@/views/rules/structuretree/index.vue'),
-        meta: { title: '知识结构树' },
+        {
+        path: '/rules/file',
+        name: '文件管理',
+        component: () => import('@/views/rules/file/index.vue'),
+        meta: { title: '文件管理' },
       },
       {
         path: '/rules/extraction',
@@ -141,18 +141,7 @@ export const constantRoutes: RouteItem[] = [
         component: () => import('@/views/rules/extraction/index.vue'),
         meta: { title: '知识提取' },
       },
-      {
-        path: '/rules/search',
-        name: '搜索区',
-        component: () => import('@/views/rules/search/index.vue'),
-        meta: { title: '搜索区' },
-      },
-      {
-        path: '/rules/file',
-        name: '文件管理',
-        component: () => import('@/views/rules/file/index.vue'),
-        meta: { title: '文件管理' },
-      },
+
     ],
   },
   {

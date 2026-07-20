@@ -168,34 +168,117 @@
       <el-empty v-else-if="!loading" description="未找到检修计划" />
     </el-card>
 
-    <!-- 调度方案弹窗 -->
+    <!-- 调度方案弹窗 - 卡片式甘特图布局 -->
     <el-dialog
       v-model="scheduleDialogVisible"
       title="调度方案详情"
-      width="90%"
-      top="5vh"
+      width="95%"
+      top="3vh"
       :close-on-click-modal="false"
       destroy-on-close
     >
       <div v-loading="scheduleLoading">
         <div v-if="scheduleData && scheduleData.schedule_tasks && scheduleData.schedule_tasks.length > 0">
-          <el-descriptions :column="3" border size="small" class="schedule-info">
-            <el-descriptions-item label="调度方案ID">{{ scheduleData.schedule_plan_id }}</el-descriptions-item>
-            <el-descriptions-item label="计划名称">{{ scheduleData.plan_name }}</el-descriptions-item>
-            <el-descriptions-item label="任务总数">{{ scheduleData.schedule_tasks.length }}</el-descriptions-item>
-          </el-descriptions>
+          <!-- 方案基本信息 -->
+          <div class="schedule-header">
+            <div class="schedule-info-item">
+              <span class="label">方案名称</span>
+              <span class="value">{{ scheduleData.schedule_name }}</span>
+            </div>
+            <div class="schedule-info-item">
+              <span class="label">算法</span>
+              <span class="value">{{ scheduleData.algorithm || '--' }}</span>
+            </div>
+            <div class="schedule-info-item">
+              <span class="label">创建时间</span>
+              <span class="value">{{ scheduleData.created_at || '--' }}</span>
+            </div>
+            <div class="schedule-info-item">
+              <span class="label">项目开始日期</span>
+              <span class="value">{{ scheduleData.project_start_date || '--' }}</span>
+            </div>
+            <div class="schedule-info-item">
+              <span class="label">总工期</span>
+              <span class="value highlight">{{ scheduleData.total_days || 0 }} 天</span>
+            </div>
+            <div class="schedule-info-item">
+              <span class="label">任务总数</span>
+              <span class="value">{{ scheduleData.schedule_tasks.length }} 项</span>
+            </div>
+          </div>
 
-          <el-table :data="scheduleData.schedule_tasks" border stripe size="small" style="width: 100%; margin-top: 16px">
-            <el-table-column prop="process_name" label="工序名称" min-width="120" />
-            <el-table-column prop="equipment_name" label="设备名称" min-width="120" />
-            <el-table-column prop="equipment_category" label="设备类别" min-width="90" />
-            <el-table-column prop="start_time_formatted" label="开始时间" min-width="140" />
-            <el-table-column prop="end_time_formatted" label="结束时间" min-width="140" />
-            <el-table-column prop="duration_days" label="持续天数" width="80" align="center" />
-            <el-table-column label="分配工人" min-width="200" show-overflow-tooltip>
-              <template #default="{ row }">{{ formatWorkers(row.workers) }}</template>
-            </el-table-column>
-          </el-table>
+          <!-- 甘特图区域 -->
+          <div class="gantt-container">
+            <!-- 左侧工序列表 -->
+            <div class="gantt-left-panel">
+              <div class="gantt-left-header">
+                <span class="col-id">#</span>
+                <span class="col-process">工序名称</span>
+                <span class="col-equipment">设备名称</span>
+                <span class="col-duration">时长</span>
+              </div>
+              <div class="gantt-left-body">
+                <div
+                  v-for="(task, index) in sortedScheduleTasks"
+                  :key="task.schedule_id"
+                  class="gantt-row"
+                >
+                  <span class="col-id">{{ index + 1 }}</span>
+                  <span class="col-process" :title="task.process_name">{{ task.process_name }}</span>
+                  <span class="col-equipment" :title="task.equipment_name">{{ task.equipment_name }}</span>
+                  <span class="col-duration">{{ task.duration_days }}d</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右侧时间轴 -->
+            <div class="gantt-right-panel">
+              <!-- 时间轴头部 -->
+              <div class="gantt-header">
+                <div
+                  v-for="day in totalDaysArray"
+                  :key="day"
+                  class="gantt-header-cell"
+                >
+                  第{{ day }}天
+                </div>
+              </div>
+              <!-- 时间轴主体 -->
+              <div class="gantt-body">
+                <div
+                  v-for="task in sortedScheduleTasks"
+                  :key="task.schedule_id"
+                  class="gantt-row"
+                >
+                  <div class="gantt-row-content">
+                    <div
+                      class="gantt-bar"
+                      :style="getBarStyle(task)"
+                      @mouseenter="showTaskTooltip($event, task)"
+                      @mouseleave="hideTaskTooltip"
+                    >
+                      <span class="bar-label">{{ task.process_name }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 任务详情列表 -->
+          <div class="schedule-tasks-detail">
+            <h4>任务详情</h4>
+            <el-table :data="sortedScheduleTasks" border stripe size="small" style="width: 100%">
+              <el-table-column prop="process_name" label="工序名称" min-width="140" />
+              <el-table-column prop="equipment_name" label="设备名称" min-width="120" />
+              <el-table-column prop="start_time_formatted" label="开始时间" min-width="140" />
+              <el-table-column prop="end_time_formatted" label="结束时间" min-width="140" />
+              <el-table-column prop="duration_days" label="持续天数" width="80" align="center" />
+              <el-table-column label="分配工人" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }">{{ formatWorkers(row.workers) }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
         </div>
         <el-empty v-else description="暂无调度方案数据" />
       </div>
@@ -203,6 +286,31 @@
         <el-button @click="scheduleDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 任务悬停提示 -->
+    <div
+      v-if="taskTooltipVisible"
+      class="task-tooltip"
+      :style="{ left: tooltipPosition.x + 'px', top: tooltipPosition.y + 'px' }"
+    >
+      <div class="tooltip-title">{{ taskTooltipData.process_name }}</div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">设备：</span>
+        <span>{{ taskTooltipData.equipment_name }}</span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">开始：</span>
+        <span>{{ taskTooltipData.start_time_formatted }}</span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">结束：</span>
+        <span>{{ taskTooltipData.end_time_formatted }}</span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">工人：</span>
+        <span>{{ formatWorkers(taskTooltipData.workers) }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -337,6 +445,45 @@ const formatWorkers = (workers) => {
   return parts.join('；') || '--'
 }
 
+// 调度方案相关计算属性和方法
+const sortedScheduleTasks = computed(() => {
+  if (!scheduleData.value?.schedule_tasks) return []
+  return [...scheduleData.value.schedule_tasks].sort((a, b) => {
+    if (a.start_time !== b.start_time) return a.start_time - b.start_time
+    return a.equipment_name.localeCompare(b.equipment_name)
+  })
+})
+
+const totalDaysArray = computed(() => {
+  const total = scheduleData.value?.total_days || 0
+  return Array.from({ length: total }, (_, i) => i + 1)
+})
+
+const getBarStyle = (task) => {
+  const totalDays = scheduleData.value?.total_days || 1
+  const leftPercent = (task.start_time / totalDays) * 100
+  const widthPercent = (task.duration_days / totalDays) * 100
+  return {
+    left: `${leftPercent}%`,
+    width: `${widthPercent}%`,
+  }
+}
+
+// 悬停提示
+const taskTooltipVisible = ref(false)
+const taskTooltipData = ref({})
+const tooltipPosition = ref({ x: 0, y: 0 })
+
+const showTaskTooltip = (event, task) => {
+  taskTooltipData.value = task
+  tooltipPosition.value = { x: event.clientX + 10, y: event.clientY + 10 }
+  taskTooltipVisible.value = true
+}
+
+const hideTaskTooltip = () => {
+  taskTooltipVisible.value = false
+}
+
 const getProgressStatus = (val) => {
   if (val >= 100) return 'success'
   if (val > 0) return ''
@@ -361,6 +508,12 @@ const getStatusTagType = (status) => {
 
 onMounted(() => {
   fetchDetail()
+  const view = route.query.view
+  if (view === 'schedule') {
+    setTimeout(() => {
+      viewSchedulePlan()
+    }, 500)
+  }
 })
 </script>
 
@@ -524,5 +677,248 @@ onMounted(() => {
 
 .schedule-info {
   margin-bottom: 8px;
+}
+
+/* 调度方案弹窗样式 */
+.schedule-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: 16px 20px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.schedule-info-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.schedule-info-item .label {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.schedule-info-item .value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.schedule-info-item .value.highlight {
+  font-size: 16px;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+/* 甘特图容器 */
+.gantt-container {
+  display: flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+/* 左侧面板 */
+.gantt-left-panel {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid #e2e8f0;
+  background-color: #ffffff;
+}
+
+.gantt-left-header {
+  display: flex;
+  padding: 12px 8px;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.gantt-left-header .col-id {
+  width: 36px;
+  text-align: center;
+}
+
+.gantt-left-header .col-process {
+  flex: 1;
+  padding-left: 8px;
+}
+
+.gantt-left-header .col-equipment {
+  display: none;
+}
+
+.gantt-left-header .col-duration {
+  width: 40px;
+  text-align: center;
+}
+
+.gantt-left-body {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.gantt-left-body .gantt-row {
+  display: flex;
+  padding: 10px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+  align-items: center;
+}
+
+.gantt-left-body .gantt-row:hover {
+  background-color: #f8fafc;
+}
+
+.gantt-left-body .col-id {
+  width: 36px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.gantt-left-body .col-process {
+  flex: 1;
+  padding-left: 8px;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-left-body .col-equipment {
+  display: none;
+}
+
+.gantt-left-body .col-duration {
+  width: 40px;
+  text-align: center;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* 右侧时间轴面板 */
+.gantt-right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gantt-header {
+  display: flex;
+  padding: 12px 0;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  overflow-x: auto;
+}
+
+.gantt-header-cell {
+  flex: 1;
+  min-width: 60px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.gantt-body {
+  flex: 1;
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.gantt-body .gantt-row {
+  display: flex;
+  min-height: 42px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.gantt-row-content {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  padding: 6px 0;
+}
+
+.gantt-bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.gantt-bar:hover {
+  opacity: 0.9;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.bar-label {
+  font-size: 11px;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* 任务详情列表 */
+.schedule-tasks-detail {
+  margin-top: 16px;
+}
+
+.schedule-tasks-detail h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 12px;
+}
+
+/* 任务悬停提示 */
+.task-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  min-width: 240px;
+  pointer-events: none;
+}
+
+.tooltip-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.tooltip-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #475569;
+}
+
+.tooltip-label {
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
 }
 </style>

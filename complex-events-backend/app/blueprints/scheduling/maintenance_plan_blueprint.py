@@ -127,7 +127,7 @@ def get_maintenance_plan(plan_id):
             )
             work_orders = [dict(row) for row in c.fetchall()]
 
-            # 每个工单的任务统计
+            # 每个工单的任务统计 + 人工费用
             for wo in work_orders:
                 c.execute(
                     """
@@ -141,6 +141,29 @@ def get_maintenance_plan(plan_id):
                 stat = c.fetchone()
                 wo["task_total"] = stat["total"]
                 wo["task_completed"] = stat["completed"] or 0
+
+                # 计算该工单的人工费用
+                # worker_price 格式："普工天数,技工天数,高级技工天数"
+                # 人工费用 = 普工天数 × 126 + 技工天数 × 173 + 高级技工天数 × 236
+                c.execute(
+                    """
+                    SELECT pt.worker_price
+                    FROM work_order_tasks t
+                    LEFT JOIN process_templates pt ON CAST(pt.id AS TEXT) = t.process_id
+                    WHERE t.work_order_id = ?
+                    """,
+                    (wo["id"],),
+                )
+                labor_cost = 0.0
+                for (wp,) in c.fetchall():
+                    if not wp:
+                        continue
+                    parts = str(wp).split(",")
+                    common = float(parts[0]) if len(parts) >= 1 and parts[0].strip() else 0.0
+                    skilled = float(parts[1]) if len(parts) >= 2 and parts[1].strip() else 0.0
+                    senior = float(parts[2]) if len(parts) >= 3 and parts[2].strip() else 0.0
+                    labor_cost += common * 126 + skilled * 173 + senior * 236
+                wo["labor_cost"] = round(labor_cost, 2)
 
             plan_dict["work_orders"] = work_orders
             plan_dict["work_order_count"] = len(work_orders)

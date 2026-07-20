@@ -158,11 +158,22 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="200" align="center">
+          <el-table-column label="操作" min-width="220" align="center">
             <template #default="{ row }">
               <div class="action-buttons">
                 <el-button size="small" type="primary" @click="goDetail(row)">查看详情</el-button>
-                <el-button size="small" type="primary" :disabled="!row.schedule_plan_id" @click="goSchedule(row)">查看调度计划</el-button>
+                <el-button
+                  v-if="row.schedule_plan_id"
+                  size="small"
+                  type="primary"
+                  @click="goSchedule(row)"
+                >查看调度计划</el-button>
+                <el-button
+                  v-else
+                  size="small"
+                  type="success"
+                  @click="handleGenerateSchedule(row)"
+                >生成调度方案</el-button>
               </div>
             </template>
           </el-table-column>
@@ -267,6 +278,10 @@ const goDetail = (row) => {
 
 const goSchedule = (row) => {
   router.push(`/maintenance-plan/detail/${row.id}`)
+}
+
+const handleGenerateSchedule = (row) => {
+  ElMessage.info(`计划「${row.plan_name}」的调度方案生成功能待调度模块完成后开放`)
 }
 
 const formatDate = (str) => {

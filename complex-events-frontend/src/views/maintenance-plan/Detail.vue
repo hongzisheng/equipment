@@ -39,9 +39,8 @@
           <el-descriptions-item label="关联工单数">{{ plan.work_order_count || 0 }}</el-descriptions-item>
           <el-descriptions-item label="计划开始时间">{{ plan.planned_start_time || '--' }}</el-descriptions-item>
           <el-descriptions-item label="计划结束时间">{{ plan.planned_end_time || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="调度方案">
-            <el-tag v-if="plan.schedule_plan_id" type="success" size="small">已生成 (ID: {{ plan.schedule_plan_id }})</el-tag>
-            <el-tag v-else type="info" size="small" effect="plain">未生成</el-tag>
+          <el-descriptions-item label="人工费用">
+            <span class="highlight-text">¥{{ formatCost(totalLaborCost) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="实际开始时间">{{ plan.actual_start_time || '--' }}</el-descriptions-item>
           <el-descriptions-item label="实际结束时间">{{ plan.actual_end_time || '--' }}</el-descriptions-item>
@@ -135,10 +134,19 @@
           <el-table-column prop="equipment_name" label="设备名称" min-width="130" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" min-width="80" align="center">
             <template #default="{ row }">
-              <el-tag size="small">{{ row.status }}</el-tag>
+              <el-tag size="small">{{ statusMap[row.status] || row.status }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="priority" label="优先级" min-width="70" align="center" />
+          <el-table-column prop="priority" label="优先级" min-width="70" align="center">
+            <template #default="{ row }">
+              {{ priorityMap[row.priority] || row.priority }}
+            </template>
+          </el-table-column>
+          <el-table-column label="人工费用" min-width="100" align="center">
+            <template #default="{ row }">
+              <span class="cost-value">¥{{ formatCost(row.labor_cost) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="任务进度" min-width="130" align="center">
             <template #default="{ row }">
               <el-progress
@@ -217,6 +225,28 @@ const scheduleDialogVisible = ref(false)
 const scheduleData = ref(null)
 
 const planId = computed(() => route.params.id)
+
+const statusMap = {
+  pending: '待处理',
+  processing: '进行中',
+  completed: '已完成',
+  closed: '已关闭',
+  released: '已下发',
+  scheduled: '已排程',
+  equipment_closed: '设备已关闭',
+}
+
+const priorityMap = {
+  high: '高',
+  medium: '中',
+  low: '低',
+}
+
+// 人工费用合计（所有关联工单）
+const totalLaborCost = computed(() => {
+  if (!plan.value.work_orders) return 0
+  return plan.value.work_orders.reduce((sum, wo) => sum + (wo.labor_cost || 0), 0)
+})
 
 // 完成率计算
 const hoursRate = computed(() => {
@@ -389,6 +419,11 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: #1e293b;
+}
+
+.cost-value {
+  font-weight: 600;
+  color: #e74c3c;
 }
 
 .stats-row {

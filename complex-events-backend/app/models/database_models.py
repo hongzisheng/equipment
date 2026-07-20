@@ -242,6 +242,7 @@ class ScheduleTask(Base):
     workers = Column(String(500))
     predecessors = Column(String(500))
     schedule_plan_id = Column(Integer)
+    worker_price = Column(String(100))
 
 
 class User(Base):

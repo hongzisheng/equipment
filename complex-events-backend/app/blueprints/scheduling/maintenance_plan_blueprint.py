@@ -730,6 +730,8 @@ def run_scheduler_by_plan(plan_id):
     try:
         data = request.get_json() or {}
         algorithm_name = data.get("algorithm", "topological")
+        target = data.get("target", "minimize_duration")
+        print(f"[DEBUG] 生成调度: plan_id={plan_id}, algorithm={algorithm_name}, target={target}")
 
         # 1. 确认检修计划存在并查询关联工单
         with get_db_connection(row_factory=sqlite3.Row) as conn:
@@ -1025,7 +1027,7 @@ def compare_schedule_plans():
                     """SELECT schedule_id, process_id, process_name, equipment_id, equipment_name,
                               equipment_type_id, equipment_type_name, equipment_category,
                               start_time, end_time, start_time_formatted, end_time_formatted,
-                              duration_days, workers, predecessors
+                              duration_days, workers, predecessors, worker_price
                        FROM schedule_tasks
                        WHERE schedule_plan_id = ?
                        ORDER BY equipment_id, start_time""",
@@ -1069,7 +1071,7 @@ def compare_schedule_plans():
 
 
 def _compute_plan_overview(plan):
-    """计算方案概览统计：总任务数、总工期、起止时间、工人数量、按设备分组"""
+    """计算方案概览统计：总任务数、总工期、起止时间、工人数量、按设备分组、预估成本"""
     tasks = plan.get("schedule_tasks") or []
     if not tasks:
         return {
@@ -1082,6 +1084,10 @@ def _compute_plan_overview(plan):
             "worker_count": 0,
             "workers": [],
             "by_equipment": {},
+            "estimated_cost": 0,
+            "common_hours": 0,
+            "skilled_hours": 0,
+            "senior_hours": 0,
         }
 
     indexed_starts = [(i, t["start_time"]) for i, t in enumerate(tasks) if t.get("start_time") is not None]
@@ -1108,6 +1114,28 @@ def _compute_plan_overview(plan):
         eq_name = t.get("equipment_name") or t.get("equipment_id") or "未知"
         by_equipment[eq_name] = by_equipment.get(eq_name, 0) + 1
 
+    # 计算工时和成本
+    common_hours = 0
+    skilled_hours = 0
+    senior_hours = 0
+    PRICE_COMMON = 126
+    PRICE_SKILLED = 173
+    PRICE_SENIOR = 236
+
+    for task in tasks:
+        wp = task.get("worker_price")
+        if wp:
+            try:
+                parts = str(wp).split(",")
+                if len(parts) >= 3:
+                    common_hours += float(parts[0] or 0)
+                    skilled_hours += float(parts[1] or 0)
+                    senior_hours += float(parts[2] or 0)
+            except (ValueError, TypeError):
+                pass
+
+    estimated_cost = common_hours * PRICE_COMMON + skilled_hours * PRICE_SKILLED + senior_hours * PRICE_SENIOR
+
     return {
         "total_tasks": len(tasks),
         "total_duration_days": round(total_duration, 2),
@@ -1118,6 +1146,10 @@ def _compute_plan_overview(plan):
         "worker_count": len(worker_set),
         "workers": sorted(worker_set),
         "by_equipment": by_equipment,
+        "estimated_cost": round(estimated_cost, 2),
+        "common_hours": round(common_hours, 3),
+        "skilled_hours": round(skilled_hours, 3),
+        "senior_hours": round(senior_hours, 3),
     }
 
 

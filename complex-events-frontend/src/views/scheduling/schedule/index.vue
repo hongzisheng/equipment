@@ -44,7 +44,7 @@
           </div>
           <div class="button-group mt8">
             <el-button type="primary" class="schedule-btn" :loading="loadingSchedule"
-              @click="runSchedule">生成调度</el-button>
+              @click="runScheduleByPlan">生成调度</el-button>
 
             <el-button type="success" @click="savePlan" :loading="saving" class="save-btn">保存方案</el-button>
             <!-- 方案历史按钮：已选计划时显示 -->
@@ -315,104 +315,195 @@
     >
       <div v-loading="loadingCompare">
         <!-- 顶部：两个方案元信息并排卡片 -->
-        <el-row :gutter="16" v-if="compareData">
+        <el-row :gutter="24" v-if="compareData" class="comparison-container">
+          <!-- ================= 方案 A ================= -->
           <el-col :span="12">
-            <el-card class="compare-card compare-card-left" shadow="hover">
+            <el-card class="compare-card plan-a-card" shadow="never">
               <template #header>
                 <div class="compare-card-header">
-                  <span class="compare-card-title">方案 A：{{ compareData.plan1.schedule_name }}</span>
+                  <h3 class="compare-card-title">方案 A：{{ compareData.plan1.schedule_name }}</h3>
                   <el-button
                     v-if="compareData.plan1.status !== '生效中'"
-                    type="success"
+                    type="primary"
                     size="small"
                     @click="activatePlanFromCompare(compareData.plan1)"
-                  >设为生效</el-button>
-                  <el-tag v-else type="success" size="small">当前生效</el-tag>
+                  >
+                    设为生效
+                  </el-button>
+                  <el-tag v-else type="success" size="small" effect="dark">当前生效</el-tag>
                 </div>
               </template>
-              <div class="compare-card-body">
-                <div class="compare-meta"><span>算法：</span>{{ compareData.plan1.algorithm || '—' }}</div>
-                <div class="compare-meta"><span>状态：</span>{{ compareData.plan1.status || '—' }}</div>
-                <div class="compare-meta"><span>创建时间：</span>{{ compareData.plan1.created_at || '—' }}</div>
-                <div class="compare-meta"><span>任务数：</span>{{ compareData.overview1.total_tasks }}</div>
-                <div class="compare-meta"><span>总工期：</span>{{ compareData.overview1.total_duration_days }} 天</div>
-                <div class="compare-meta"><span>起止时间：</span>{{ compareData.overview1.start_time_formatted || '—' }} ~ {{ compareData.overview1.end_time_formatted || '—' }}</div>
-                <div class="compare-meta"><span>工人数：</span>{{ compareData.overview1.worker_count }}</div>
+
+              <!-- 核心指标区 -->
+              <div class="core-metrics">
+                <!-- 预估成本 (实时计算) -->
+                <div class="metric-item">
+                  <div class="metric-label">💰 预估成本</div>
+                  <div class="metric-value-wrapper">
+                    <div class="metric-main">
+                      <span :class="['metric-value', getMetricColor(costPlan1, costPlan2, true)]">
+                        ¥ {{ formatNumber(costPlan1) }}
+                      </span>
+                    </div>
+                    <span :class="['diff-tag', getDiffTagClass(costPlan1, costPlan2, true)]">
+                      {{ getCostDiffText(costPlan1, costPlan2) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- 工人数 -->
+                <div class="metric-item">
+                  <div class="metric-label">👷 工人数</div>
+                  <div class="metric-value-wrapper">
+                    <div class="metric-main">
+                      <span :class="['metric-value', getMetricColor(compareData.overview1.worker_count, compareData.overview2.worker_count, true)]">
+                        {{ compareData.overview1.worker_count }}
+                      </span>
+                      <span class="metric-unit">人</span>
+                    </div>
+                    <span :class="['diff-tag', getDiffTagClass(compareData.overview1.worker_count, compareData.overview2.worker_count, true)]">
+                      {{ getWorkerDiffText(compareData.overview1.worker_count, compareData.overview2.worker_count) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- 总工期 -->
+                <div class="metric-item">
+                  <div class="metric-label">📅 总工期</div>
+                  <div class="metric-value-wrapper">
+                    <div class="metric-main">
+                      <span :class="['metric-value', getMetricColor(compareData.overview1.total_duration_days, compareData.overview2.total_duration_days, true)]">
+                        {{ compareData.overview1.total_duration_days }}
+                      </span>
+                      <span class="metric-unit">天</span>
+                    </div>
+                    <span :class="['diff-tag', getDiffTagClass(compareData.overview1.total_duration_days, compareData.overview2.total_duration_days, true)]">
+                      {{ getDurationDiffText(compareData.overview1.total_duration_days, compareData.overview2.total_duration_days) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 次要信息区 -->
+              <div class="secondary-info">
+                <div class="info-row">
+                  <span class="info-label">起止时间</span>
+                  <span>{{ compareData.overview1.start_time_formatted || '—' }} ~ {{ compareData.overview1.end_time_formatted || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">创建时间</span>
+                  <span>{{ compareData.plan1.created_at || '—' }}</span>
+                </div>
               </div>
             </el-card>
           </el-col>
+
+          <!-- ================= 方案 B ================= -->
           <el-col :span="12">
-            <el-card class="compare-card compare-card-right" shadow="hover">
+            <el-card class="compare-card plan-b-card" shadow="never">
               <template #header>
                 <div class="compare-card-header">
-                  <span class="compare-card-title">方案 B：{{ compareData.plan2.schedule_name }}</span>
+                  <h3 class="compare-card-title">方案 B：{{ compareData.plan2.schedule_name }}</h3>
                   <el-button
                     v-if="compareData.plan2.status !== '生效中'"
-                    type="success"
+                    type="primary"
                     size="small"
                     @click="activatePlanFromCompare(compareData.plan2)"
-                  >设为生效</el-button>
-                  <el-tag v-else type="success" size="small">当前生效</el-tag>
+                  >
+                    设为生效
+                  </el-button>
+                  <el-tag v-else type="success" size="small" effect="dark">当前生效</el-tag>
                 </div>
               </template>
-              <div class="compare-card-body">
-                <div class="compare-meta"><span>算法：</span>{{ compareData.plan2.algorithm || '—' }}</div>
-                <div class="compare-meta"><span>状态：</span>{{ compareData.plan2.status || '—' }}</div>
-                <div class="compare-meta"><span>创建时间：</span>{{ compareData.plan2.created_at || '—' }}</div>
-                <div class="compare-meta"><span>任务数：</span>{{ compareData.overview2.total_tasks }}</div>
-                <div class="compare-meta"><span>总工期：</span>{{ compareData.overview2.total_duration_days }} 天</div>
-                <div class="compare-meta"><span>起止时间：</span>{{ compareData.overview2.start_time_formatted || '—' }} ~ {{ compareData.overview2.end_time_formatted || '—' }}</div>
-                <div class="compare-meta"><span>工人数：</span>{{ compareData.overview2.worker_count }}</div>
+
+              <!-- 核心指标区 -->
+              <div class="core-metrics">
+                <!-- 预估成本 (实时计算) -->
+                <div class="metric-item">
+                  <div class="metric-label">💰 预估成本</div>
+                  <div class="metric-value-wrapper">
+                    <div class="metric-main">
+                      <span :class="['metric-value', getMetricColor(costPlan2, costPlan1, true)]">
+                        ¥ {{ formatNumber(costPlan2) }}
+                      </span>
+                    </div>
+                    <span :class="['diff-tag', getDiffTagClass(costPlan2, costPlan1, true)]">
+                      {{ getCostDiffText(costPlan2, costPlan1) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- 工人数 -->
+                <div class="metric-item">
+                  <div class="metric-label">👷 工人数</div>
+                  <div class="metric-value-wrapper">
+                    <div class="metric-main">
+                      <span :class="['metric-value', getMetricColor(compareData.overview2.worker_count, compareData.overview1.worker_count, true)]">
+                        {{ compareData.overview2.worker_count }}
+                      </span>
+                      <span class="metric-unit">人</span>
+                    </div>
+                    <span :class="['diff-tag', getDiffTagClass(compareData.overview2.worker_count, compareData.overview1.worker_count, true)]">
+                      {{ getWorkerDiffText(compareData.overview2.worker_count, compareData.overview1.worker_count) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- 总工期 -->
+                <div class="metric-item">
+                  <div class="metric-label">📅 总工期</div>
+                  <div class="metric-value-wrapper">
+                    <div class="metric-main">
+                      <span :class="['metric-value', getMetricColor(compareData.overview2.total_duration_days, compareData.overview1.total_duration_days, true)]">
+                        {{ compareData.overview2.total_duration_days }}
+                      </span>
+                      <span class="metric-unit">天</span>
+                    </div>
+                    <span :class="['diff-tag', getDiffTagClass(compareData.overview2.total_duration_days, compareData.overview1.total_duration_days, true)]">
+                      {{ getDurationDiffText(compareData.overview2.total_duration_days, compareData.overview1.total_duration_days) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 次要信息区 -->
+              <div class="secondary-info">
+                <div class="info-row">
+                  <span class="info-label">起止时间</span>
+                  <span>{{ compareData.overview2.start_time_formatted || '—' }} ~ {{ compareData.overview2.end_time_formatted || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">创建时间</span>
+                  <span>{{ compareData.plan2.created_at || '—' }}</span>
+                </div>
               </div>
             </el-card>
           </el-col>
         </el-row>
+        <!-- 合并差异筛选与任务明细对比 -->
+        <el-card v-if="compareData" class="mt12 diff-panel" shadow="never">
+          <!-- 头部：将筛选器移入表格卡片的 Header -->
+          <template #header>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="section-title" style="margin-bottom: 0;">任务明细对比</div>
+              
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="color: #606266; font-size: 14px;">差异筛选：</span>
+                <el-radio-group v-model="diffFilter" size="small">
+                  <el-radio-button value="all">全部 ({{ compareData.task_diff.summary.total }})</el-radio-button>
+                  <el-radio-button value="changed">差异 ({{ compareData.task_diff.summary.added + compareData.task_diff.summary.removed + compareData.task_diff.summary.changed }})</el-radio-button>
+                  <el-radio-button value="added">新增 ({{ compareData.task_diff.summary.added }})</el-radio-button>
+                  <el-radio-button value="removed">删除 ({{ compareData.task_diff.summary.removed }})</el-radio-button>
+                  <el-radio-button value="unchanged">相同 ({{ compareData.task_diff.summary.unchanged }})</el-radio-button>
+                </el-radio-group>
+                
+                <el-button type="warning" size="small" @click="exportCompareReport">导出对比报告</el-button>
+              </div>
+            </div>
+          </template>
 
-        <!-- 中部：差异统计 -->
-        <el-card v-if="compareData" class="mt12" shadow="never">
-          <div class="section-title">差异概览</div>
-          <el-row :gutter="16" class="diff-summary-row">
-            <el-col :span="6">
-              <div class="diff-summary-item diff-added">
-                <div class="diff-num">{{ compareData.task_diff.summary.added }}</div>
-                <div class="diff-label">方案B新增任务</div>
-              </div>
-            </el-col>
-            <el-col :span="6">
-              <div class="diff-summary-item diff-removed">
-                <div class="diff-num">{{ compareData.task_diff.summary.removed }}</div>
-                <div class="diff-label">方案B删除任务</div>
-              </div>
-            </el-col>
-            <el-col :span="6">
-              <div class="diff-summary-item diff-changed">
-                <div class="diff-num">{{ compareData.task_diff.summary.changed }}</div>
-                <div class="diff-label">有差异的任务</div>
-              </div>
-            </el-col>
-            <el-col :span="6">
-              <div class="diff-summary-item diff-unchanged">
-                <div class="diff-num">{{ compareData.task_diff.summary.unchanged }}</div>
-                <div class="diff-label">完全相同</div>
-              </div>
-            </el-col>
-          </el-row>
-          <div class="diff-filter-bar">
-            <span>差异筛选：</span>
-            <el-radio-group v-model="diffFilter" size="small">
-              <el-radio-button value="all">全部 ({{ compareData.task_diff.summary.total }})</el-radio-button>
-              <el-radio-button value="changed">差异 ({{ compareData.task_diff.summary.added + compareData.task_diff.summary.removed + compareData.task_diff.summary.changed }})</el-radio-button>
-              <el-radio-button value="added">新增 ({{ compareData.task_diff.summary.added }})</el-radio-button>
-              <el-radio-button value="removed">删除 ({{ compareData.task_diff.summary.removed }})</el-radio-button>
-              <el-radio-button value="unchanged">相同 ({{ compareData.task_diff.summary.unchanged }})</el-radio-button>
-            </el-radio-group>
-            <el-button type="warning" size="small" @click="exportCompareReport" style="margin-left: 12px;">导出对比报告</el-button>
-          </div>
-        </el-card>
-
-        <!-- 底部：左右并排任务表格 -->
-        <el-card v-if="compareData" class="mt12" shadow="never">
-          <div class="section-title">任务明细对比（按 设备 + 工序 对齐）</div>
+          <!-- 主体：原有表格保持不变 -->
+          <!-- 主体：原有表格保持不变 -->
           <el-table
             :data="filteredDiffItems"
             border
@@ -427,6 +518,7 @@
                 <div class="diff-proc-name">{{ row.task1?.process_name || row.task2?.process_name || '—' }}</div>
               </template>
             </el-table-column>
+            
             <el-table-column label="方案 A" align="center">
               <el-table-column label="开始时间" min-width="140">
                 <template #default="{ row }">
@@ -444,6 +536,7 @@
                 </template>
               </el-table-column>
             </el-table-column>
+
             <el-table-column label="方案 B" align="center">
               <el-table-column label="开始时间" min-width="140">
                 <template #default="{ row }">
@@ -461,6 +554,7 @@
                 </template>
               </el-table-column>
             </el-table-column>
+
             <el-table-column label="差异类型" min-width="140" fixed="right">
               <template #default="{ row }">
                 <el-tag :type="diffTagType(row.status)" size="small">
@@ -551,7 +645,7 @@ import * as echarts from 'echarts'
 import * as XLSX from 'xlsx'
 import axios from 'axios'
 import request from '@/utils/request'
-import { getPlansForSchedule, runScheduleFromPlan } from '@/api/scheduleApi' 
+import { getPlansForSchedule } from '@/api/scheduleApi' 
 import GanttView from './GanttView.vue'
 import GanttCompareView from './GanttCompareView.vue'
 const selectedDeviceFilter = ref('')
@@ -586,6 +680,73 @@ const selectedComparePlans = ref([])             // 选中的对比方案（最�
 const compareDialogVisible = ref(false)          // 对比对话框
 const loadingCompare = ref(false)                // 对比数据加载状态
 const compareData = ref(null)                    // 对比数据
+
+// ====== 预估成本（使用后端计算的 estimated_cost） ======
+
+// 计算方案 A 的总成本
+const costPlan1 = computed(() => {
+  if (!compareData.value?.overview1) return 0;
+  return compareData.value.overview1.estimated_cost || 0;
+});
+
+// 计算方案 B 的总成本
+const costPlan2 = computed(() => {
+  if (!compareData.value?.overview2) return 0;
+  return compareData.value.overview2.estimated_cost || 0;
+});
+
+// 数字千分位格式化
+const formatNumber = (num) => {
+  return Number(num).toLocaleString('en-US'); 
+}
+
+// 获取指标颜色类名
+const getMetricColor = (currentValue, targetValue, isLowerBetter = true) => {
+  if (currentValue == null || targetValue == null) return 'status-neutral';
+  const cur = Number(currentValue);
+  const tar = Number(targetValue);
+  if (cur === tar) return 'status-neutral';
+  
+  const isLower = cur < tar;
+  return isLowerBetter 
+    ? (isLower ? 'status-good' : 'status-bad') 
+    : (isLower ? 'status-bad' : 'status-good');
+}
+
+// 获取差异标签的背景类名
+const getDiffTagClass = (currentValue, targetValue, isLowerBetter = true) => {
+  if (currentValue == null || targetValue == null) return 'neutral';
+  const cur = Number(currentValue);
+  const tar = Number(targetValue);
+  if (cur === tar) return 'neutral';
+  
+  const isLower = cur < tar;
+  return isLowerBetter 
+    ? (isLower ? 'good' : 'bad') 
+    : (isLower ? 'bad' : 'good');
+}
+
+// 成本差异文案
+const getCostDiffText = (current, target) => {
+  if (current == null || target == null || current === target) return '- 平局';
+  const diff = Math.abs(current - target);
+  return current < target ? `↓ 省 ¥ ${formatNumber(diff)}` : `↑ 贵 ¥ ${formatNumber(diff)}`;
+}
+
+// 工人数差异文案
+const getWorkerDiffText = (current, target) => {
+  if (current == null || target == null || current === target) return '- 平局';
+  const diff = Math.abs(current - target);
+  return current < target ? `↓ 少 ${diff} 人` : `↑ 多 ${diff} 人`;
+}
+
+// 工期差异文案
+const getDurationDiffText = (current, target) => {
+  if (current == null || target == null || current === target) return '- 平局';
+  const diff = Math.abs(current - target);
+  return current < target ? `↓ 快 ${diff} 天` : `↑ 慢 ${diff} 天`;
+}
+
 const diffFilter = ref('changed')                // 差异筛选：all/changed/added/removed/unchanged
 
 async function savePlan() {
@@ -1756,79 +1917,6 @@ function syncSchedulePlanToStorage() {
     }
   });
   localStorage.setItem('schedule_plan', JSON.stringify(schedulePlan));
-}
-async function runSchedule() {
-  loadingSchedule.value = true
-  try {
-    if (!selectedPlanId.value) {
-      ElMessage.warning('请先选择一个检修计划')
-      return
-    }
-    
-    // 获取选中的工人
-    const workerData = await request({
-      url: '/api/selected-workers',
-      method: 'get'
-    })
-    const selected_worker = workerData.data?.selected_workers || []
-    
-    // 调用新的基于计划的调度接口
-    const result = await runScheduleFromPlan({
-      plan_id: selectedPlanId.value,
-      algorithm: selectedAlgorithm.value,
-      target: selectedTarget.value
-    })
-    
-    if (result.success) {
-      // 后续处理逻辑保持不变...
-      projectStartDatetime.value = result.project_start_datetime
-      localStorage.setItem('schedule_plan', JSON.stringify(result.schedule_plan || []))
-
-      assignmentRows.value = result.schedule_plan?.map(task => {
-        const safeWorkers = task.workers && typeof task.workers === 'object' ? task.workers : {};
-        const workersArray = Object.entries(safeWorkers).map(([type, workers]) => {
-          const workersList = Array.isArray(workers) ? workers : [];
-          const names = workersList.length > 0 ? workersList.join('、') : '待分配';
-          return `${type}: ${names}`
-        })
-        return {
-          task: task.process_name,
-          device: task.equipment_name,
-          processId: task.process_id,
-          equipmentId: task.equipment_id,
-          workers: safeWorkers,
-          workersText: Array.isArray(workersArray) && workersArray.length > 0 ? workersArray.join('；') : '未分配',
-          startTimeFormatted: task.start_time_formatted,
-          endTimeFormatted: task.end_time_formatted,
-          durationHours: task.duration_days,
-          startDay: task.start_time,
-          endDay: task.end_time
-        }
-      }) || []
-  
-  // 处理工人池和任务数据...
-  showGanttView.value = false
-  await nextTick()
-  showGanttView.value = true
-  
-  ElMessage.success('调度方案生成成功！')
-      
-      // 处理工人池和任务数据...
-      // (保持原有逻辑不变)
-      showGanttView.value = false
-      await nextTick()
-      showGanttView.value = true
-      
-      ElMessage.success('调度方案生成成功！')
-    } else {
-      ElMessage.error(result.message || '调度执行失败')
-    }
-  } catch (error) {
-    console.error('调度执行失败:', error)
-    ElMessage.error('调度执行失败，请检查后端服务是否启动')
-  } finally {
-    loadingSchedule.value = false
-  }
 }
 
 // 导出任务分配明细为Excel文件
@@ -4018,38 +4106,119 @@ onMounted(async() => {
 }
 
 /* ====== 方案对比对话框样式 ====== */
+
+.comparison-container {
+  margin-bottom: 24px;
+}
+
 .compare-card {
-  margin-bottom: 0;
+  border-radius: 12px;
+  border: 1px solid #e8e8e8;
+  height: 100%;
 }
-.compare-card-left {
-  border-left: 4px solid #409EFF;
+
+.plan-a-card { border-top: 4px solid #1890ff; }
+.plan-b-card { border-top: 4px solid #52c41a; }
+
+.compare-card :deep(.el-card__header) {
+  padding: 16px 24px;
+  background-color: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
 }
-.compare-card-right {
-  border-left: 4px solid #67C23A;
+
+.compare-card :deep(.el-card__body) {
+  padding: 0;
 }
+
 .compare-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+
 .compare-card-title {
+  font-size: 16px;
   font-weight: 600;
+  color: #1f1f1f;
+  margin: 0;
+}
+
+/* 核心指标区 */
+.core-metrics {
+  padding: 24px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  border-bottom: 1px dashed #e8e8e8;
+}
+
+.metric-label {
   font-size: 14px;
-  color: #303133;
-}
-.compare-card-body {
-  font-size: 13px;
-  color: #606266;
-}
-.compare-meta {
+  color: #8c8c8c;
   margin-bottom: 8px;
-  line-height: 1.6;
 }
-.compare-meta span {
-  color: #909399;
+
+.metric-value-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.metric-main {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.metric-unit {
+  font-size: 14px;
+  color: #8c8c8c;
+}
+
+/* 色彩对比状态 */
+.status-good { color: #52c41a; }
+.status-bad { color: #f5222d; }
+.status-neutral { color: #1f1f1f; } 
+
+.diff-tag {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
   display: inline-block;
-  min-width: 75px;
+  line-height: 1.5;
 }
+.diff-tag.good { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+.diff-tag.bad { background: #fff2f0; color: #f5222d; border: 1px solid #ffa39e; }
+.diff-tag.neutral { background: #f5f5f5; color: #8c8c8c; border: 1px solid #d9d9d9; }
+
+/* 次要信息区 */
+.secondary-info {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.info-row {
+  font-size: 14px;
+  color: #595959;
+  display: flex;
+  align-items: center;
+}
+
+.info-label {
+  color: #8c8c8c;
+  width: 70px;
+  flex-shrink: 0;
+}
+
 
 .diff-summary-row {
   margin-top: 8px;

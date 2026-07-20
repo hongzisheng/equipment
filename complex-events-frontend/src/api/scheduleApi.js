@@ -17,18 +17,6 @@ export function getPlansForSchedule(params = {}) {
 }
 
 /**
- * 基于检修计划执行调度
- * @param {Object} data - { plan_id, algorithm, target }
- */
-export function runScheduleFromPlan(data) {
-  return request({
-    url: '/api/schedule-from-plan',
-    method: 'post',
-    data
-  })
-}
-
-/**
  * 获取检修计划的调度方案
  * @param {number} planId - 计划ID
  */

@@ -84,6 +84,7 @@ class Process:
         worker_requirements,
         is_critical=False,
         requires_certification=False,
+        worker_price=None,  # 新增参数
     ):
         self.id = id
         self.name = name
@@ -97,6 +98,7 @@ class Process:
         self.assigned_workers = {}
         self.is_critical = is_critical
         self.requires_certification = requires_certification
+        self.worker_price = worker_price  # 新增
 
 
 class Equipment:

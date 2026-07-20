@@ -163,6 +163,8 @@ class Scheduler(IScheduler):
                     "end_time": start_time,
                     "workers": {},
                     "is_milestone": True,
+                    "worker_price": getattr(process, "worker_price", None),  # 新增
+
                 }
             )
             return
@@ -196,6 +198,7 @@ class Scheduler(IScheduler):
                 "start_time": start_time,
                 "end_time": end_time,
                 "workers": worker_names_info,
+                "worker_price": getattr(process, "worker_price", None),  # 新增
             }
         )
 
@@ -431,7 +434,8 @@ class Scheduler(IScheduler):
                     wot.estimated_hours,
                     wot.is_milestone,
                     ei.equipment_type_id,
-                    pt.required_workers
+                    pt.required_workers,
+                    pt.worker_price
                 FROM work_order_tasks wot
                 JOIN work_orders wo ON wot.work_order_id = wo.id
                 JOIN equipment_instances ei ON wo.equipment_id = ei.id
@@ -471,6 +475,7 @@ class Scheduler(IScheduler):
                     is_milestone,
                     equipment_type_id,
                     required_workers,
+                    worker_price,
                 ) = task
 
                 if equipment_id not in equipment_tasks:
@@ -493,6 +498,7 @@ class Scheduler(IScheduler):
                         else {},
                         "predecessor_ids": predecessor_ids,
                         "is_milestone": bool(is_milestone),
+                        "worker_price": worker_price,
                     }
                 )
 
@@ -524,6 +530,7 @@ class Scheduler(IScheduler):
                         equipment_id=eq_id,
                         worker_requirements=task_data["worker_requirements"],
                         predecessor_ids=mapped_predecessors,
+                        worker_price=task_data.get("worker_price"),  # 新增
                     )
                     equipment.processes.append(proc)
 
@@ -651,13 +658,13 @@ class Scheduler(IScheduler):
             return None, None, False, f"调度失败: {str(e)}"
         
         
-    def _save_schedule_tasks_to_db(self, formatted_plan, schedule_plan_id=None):
+    def _save_schedule_tasks_to_db(self, formatted_plan, schedule_plan_id):
         """将调度结果写入 schedule_tasks 表"""
+        if schedule_plan_id is None:
+            raise ValueError("schedule_plan_id is required")
         db_path = _get_db_path()
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
-        if schedule_plan_id is None:
-            c.execute("DELETE FROM schedule_tasks")
         for task in formatted_plan:
             c.execute(
                 """
@@ -665,8 +672,8 @@ class Scheduler(IScheduler):
                 (duration_days, end_time, end_time_formatted, equipment_category,
                 equipment_id, equipment_name, equipment_type_id, equipment_type_name,
                 predecessors, process_id, process_name, start_time, start_time_formatted,
-                workers, schedule_plan_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                workers, schedule_plan_id, worker_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     task["duration_days"],
@@ -684,6 +691,7 @@ class Scheduler(IScheduler):
                     task["start_time_formatted"],
                     json.dumps(task["workers"], ensure_ascii=False),
                     schedule_plan_id,
+                    task.get("worker_price"),
                 ),
             )
             # 更新 work_order_tasks 的计划时间
@@ -735,6 +743,7 @@ class Scheduler(IScheduler):
                 "duration_days": duration_days,
                 "workers": task.get("workers", {}),
                 "predecessors": [],
+                "worker_price": task.get("worker_price"),
             }
             process = self.get_process_by_id(task["process_id"])
             if process and hasattr(process, "predecessor_ids"):

@@ -259,7 +259,7 @@
 
 <script setup>
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
   ArrowRight,

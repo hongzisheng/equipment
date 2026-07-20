@@ -57,13 +57,13 @@ def get_prev_status(current: str) -> str:
     return REJECT_TARGET.get(current, current)
 
 
-def log_operation(conn, task_id, operation_type, old_status, new_status, comments=""):
+def log_operation(conn, task_id, operation_type, old_status, new_status, comments="", operator_name=None):
     """写入操作日志"""
     conn.execute(
         """INSERT INTO task_operation_logs
-           (task_id, operation_type, old_status, new_status, approval_comments)
-           VALUES (?, ?, ?, ?, ?)""",
-        (task_id, operation_type, old_status, new_status, comments),
+           (task_id, operation_type, old_status, new_status, approval_comments, user_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (task_id, operation_type, old_status, new_status, comments, operator_name),
     )
 
 
@@ -234,6 +234,7 @@ def update_process():
     process_id = payload.get("id")
     action = payload.get("action")  # "confirm" 或 "reject"
     approval_comments = payload.get("approval_comments", "")
+    operator_name = payload.get("operator_name", None)
 
     if not process_id or not action:
         return Result.fail(message="请传入流程ID和操作类型(action)")
@@ -279,7 +280,7 @@ def update_process():
 
             # 写入操作日志
             log_operation(conn, int(process_id), operation_type,
-                         old_status, new_status, approval_comments)
+                         old_status, new_status, approval_comments, operator_name)
 
             conn.commit()
 
@@ -299,6 +300,7 @@ def cancel_process():
 
     process_id = payload.get("id")
     approval_comments = payload.get("approval_comments", "管理员取消")
+    operator_name = payload.get("operator_name", None)
 
     if not process_id:
         return Result.fail(message="请传入流程ID")
@@ -331,7 +333,7 @@ def cancel_process():
             )
 
             log_operation(conn, int(process_id), "cancel",
-                         old_status, new_status, approval_comments)
+                         old_status, new_status, approval_comments, operator_name)
 
             conn.commit()
 

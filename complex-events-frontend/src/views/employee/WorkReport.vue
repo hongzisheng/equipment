@@ -118,24 +118,44 @@
           </template>
         </div>
 
-        <!-- 最近上报 -->
-        <div class="recent-reports" v-if="recentReports.length > 0">
-          <div class="section-title">最近上报</div>
-          <div class="reports-header">
-            <span>时间</span>
-            <span>摘要</span>
-            <span>附件</span>
-          </div>
-          <div class="reports-list">
-            <div v-for="report in recentReports" :key="report.id" class="report-item">
-              <span class="report-time">{{ report.time }}</span>
-              <div class="report-summary">
-                <span :class="['report-type', report.typeClass]">{{ report.type }}</span>
-                <span class="summary-text">{{ report.summary }}</span>
+        <!-- 操作日志 -->
+        <div class="recent-reports">
+          <div class="section-title">{{ isProcessSelected ? '工序操作日志' : '最近操作' }}</div>
+
+          <!-- 日志列表（和管理员端格式一致） -->
+          <div
+            v-if="operationLogs.length > 0"
+            class="log-list"
+            ref="logListRef"
+            @scroll="handleLogScroll"
+          >
+            <div v-for="log in operationLogs" :key="log.id" class="log-item">
+              <div class="log-header">
+                <span v-if="log.user_id" class="log-operator">{{ log.user_id }}</span>
+                <span :class="['log-type-tag', getLogTypeClass(log.operation_type)]">
+                  {{ getOperationTypeLabel(log.operation_type) }}
+                </span>
+                <span class="log-status-flow">
+                  <span class="log-status">{{ getStatusShortLabel(log.old_status) }}</span>
+                  <span class="log-arrow">→</span>
+                  <span class="log-status">{{ getStatusShortLabel(log.new_status) }}</span>
+                </span>
+                <span class="log-time">{{ log.created_at }}</span>
               </div>
-              <span class="report-attachments">{{ report.attachments }}个</span>
+              <div v-if="!isProcessSelected && (log.equipment_name || log.process_name)" class="log-task-info">
+                {{ log.equipment_name }}{{ log.equipment_name && log.process_name ? ' · ' : '' }}{{ log.process_name }}
+              </div>
+              <div v-if="log.approval_comments" class="log-comment">{{ log.approval_comments }}</div>
+              <div v-if="log.description" class="log-comment">{{ log.description }}</div>
             </div>
+
+            <!-- 加载更多（仅未选工序时显示） -->
+            <div v-if="!isProcessSelected && logsLoadingMore" class="log-loading-more">加载中...</div>
+            <div v-else-if="!isProcessSelected && !logsHasMore && operationLogs.length > 0" class="log-no-more">— 没有更多了 —</div>
           </div>
+
+          <!-- 空状态 -->
+          <div v-else class="log-empty">暂无操作记录</div>
         </div>
 
         <!-- 提交成功弹窗 -->
@@ -162,10 +182,20 @@ const showSuccess = ref(false)
 const fileInput = ref(null)
 const uploadedFiles = ref([])
 const submitting = ref(false)
-const recentReports = ref([])
 const workOrderOptions = ref([])
 const processOptions = ref([])
 const loading = ref(false)
+
+// 操作日志（替代原来的 recentReports）
+const operationLogs = ref([])
+const logListRef = ref(null)
+const logsOffset = ref(0)
+const logsHasMore = ref(true)
+const logsLoadingMore = ref(false)
+const logsTotal = ref(0)
+const LOGS_PAGE_SIZE = 10
+
+const isProcessSelected = computed(() => !!form.selectedProcessId)
 
 const form = reactive({
   selectedWorkOrderId: '',
@@ -280,43 +310,119 @@ const hintReason = computed(() => {
   return '需等待管理员确认后方可操作'
 })
 
-// 获取操作类型文本
-const getOperationTypeText = (type) => {
-  const map = {
-    'status_update': '状态变更',
-    'upload_photo': '上传附件',
-    'approval_confirm': '审批通过',
-    'approval_reject': '审批驳回'
+// 操作类型映射（和管理员端一致）
+const OPERATION_TYPE_MAP = {
+  'confirm': '确认通过',
+  'reject': '驳回',
+  'cancel': '取消',
+  'approval_confirm': '确认通过',
+  'approval_reject': '驳回',
+  'approval_approved': '审批通过',
+  'approval_rejected': '审批驳回',
+  'status_update': '状态变更',
+  'upload_photo': '上传图片',
+}
+
+const STATUS_SHORT_MAP = {
+  'released': '待开始',
+  'pending_engineer': '待工程师确认',
+  'pending_construction': '待施工确认',
+  'pending_team': '待班组受理',
+  'pending_sign': '待施工回签',
+  'submitted': '已提交',
+  'pending_process_close': '待工艺关闭',
+  'pending_equipment_close': '待设备部关闭',
+  'completed': '已完成',
+  'cancelled': '已取消',
+  'apply_for_start': '申请开工',
+  'eng_approved': '工程师确认',
+  'construction_confirmed': '施工确认',
+  'team_received': '班组受理',
+  'construction_signed': '施工回签',
+  'process_closed': '工艺关闭',
+  'equipment_closed': '设备部关闭',
+  'in_progress': '进行中',
+  'pending': '待开始',
+  'rejected': '已驳回',
+}
+
+function getOperationTypeLabel(type) {
+  return OPERATION_TYPE_MAP[type] || type
+}
+
+function getLogTypeClass(type) {
+  if (!type) return 'tag-default'
+  if (type.includes('confirm') || type.includes('approved')) return 'tag-confirm'
+  if (type.includes('reject') || type.includes('rejected')) return 'tag-reject'
+  if (type.includes('cancel')) return 'tag-cancel'
+  if (type.includes('upload')) return 'tag-upload'
+  if (type.includes('status')) return 'tag-status'
+  return 'tag-default'
+}
+
+function getStatusShortLabel(status) {
+  return STATUS_SHORT_MAP[status] || status || '--'
+}
+
+// 获取选中工序的操作日志（和管理员端同一个 API）
+async function fetchProcessLogs() {
+  const proc = processOptions.value.find(p => p.process_id === form.selectedProcessId)
+  if (!proc?.task_id) {
+    operationLogs.value = []
+    return
   }
-  return map[type] || type
-}
-
-const getTypeClass = (type) => {
-  if (type && type.includes('approval')) return 'type-risk'
-  return 'type-normal'
-}
-
-// 获取历史记录
-const fetchRecentReports = async () => {
   try {
-    const workerId = userStore.emp_id
-    if (!workerId) return
-
-    const response = await request.get(`/api/worker/${workerId}/history`)
-
-    if (response.success) {
-      recentReports.value = response.data.map(item => ({
-        id: item.id,
-        time: item.created_at,
-        type: getOperationTypeText(item.operation_type),
-        typeClass: getTypeClass(item.operation_type),
-        summary: item.description || item.operation_type,
-        attachments: item.attachment_path ? 1 : 0
-      }))
-    }
-  } catch (error) {
-    console.error('获取历史失败:', error)
+    const res = await request.get(`/api/work-order-tasks/${proc.task_id}/logs`)
+    operationLogs.value = res.success ? (res.data || []) : []
+  } catch (e) {
+    operationLogs.value = []
   }
+}
+
+// 获取最近操作记录（分页，懒加载）
+async function fetchRecentOperations(reset = false) {
+  if (reset) {
+    logsOffset.value = 0
+    logsHasMore.value = true
+    operationLogs.value = []
+  }
+  if (!logsHasMore.value) return
+
+  logsLoadingMore.value = true
+  try {
+    const res = await request.get('/api/worker/recent-operations', {
+      params: { limit: LOGS_PAGE_SIZE, offset: logsOffset.value }
+    })
+    if (res.success) {
+      const { items, total } = res.data
+      if (reset) {
+        operationLogs.value = items
+      } else {
+        operationLogs.value.push(...items)
+      }
+      logsTotal.value = total
+      logsOffset.value += items.length
+      logsHasMore.value = logsOffset.value < total
+    }
+  } catch (e) {
+    console.error('获取操作记录失败:', e)
+  } finally {
+    logsLoadingMore.value = false
+  }
+}
+
+// 滚动懒加载
+function handleLogScroll() {
+  if (isProcessSelected.value) return  // 工序日志不需要懒加载
+  const el = logListRef.value
+  if (!el || logsLoadingMore.value || !logsHasMore.value) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) {
+    loadMoreLogs()
+  }
+}
+
+function loadMoreLogs() {
+  fetchRecentOperations(false)
 }
 
 // 获取工单和工序数据
@@ -383,7 +489,7 @@ const fetchWorkOrders = async () => {
 
 onMounted(() => {
   fetchWorkOrders()
-  fetchRecentReports()
+  fetchRecentOperations(true)
 })
 
 const onWorkOrderChange = () => {
@@ -414,12 +520,16 @@ const onProcessChange = () => {
     }
     form.currentStatus = STATUS_LABEL_MAP[selectedProc.task_status] || selectedProc.task_status || '—'
     form.nextStatus = STATUS_LABEL_MAP[getNextStatus(selectedProc.task_status)] || '-'
+    // 选中工序 → 加载该工序的操作日志
+    fetchProcessLogs()
   } else {
     form.equipment = ''
     form.workOrderNo = ''
     form.planTime = ''
     form.currentStatus = ''
     form.nextStatus = ''
+    // 取消选中 → 切回最近操作
+    fetchRecentOperations(true)
   }
 }
 
@@ -506,6 +616,7 @@ const resetForm = (keepTask = true) => {
     form.currentStatus = ''
     form.nextStatus = ''
     processOptions.value = []
+    operationLogs.value = []
   }
   form.conditionDesc = ''
   form.conditionType = 'in_progress'
@@ -517,6 +628,7 @@ const resetAll = () => {
   showSuccess.value = false
   resetForm(false)
   fetchWorkOrders()
+  fetchRecentOperations(true)
 }
 </script>
 
@@ -637,17 +749,121 @@ const resetAll = () => {
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 .recent-reports { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-.reports-header { display: grid; grid-template-columns: 120px 1fr 60px; padding: 12px 0; border-bottom: 1px solid #e9ecef; color: #94a3b8; font-size: 12px; }
-.reports-list { margin-top: 8px; }
-.report-item { display: grid; grid-template-columns: 120px 1fr 60px; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
-.report-item:last-child { border-bottom: none; }
-.report-time { color: #475569; font-size: 12px; }
-.report-summary { display: flex; align-items: center; gap: 8px; }
-.report-type { padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; white-space: nowrap; }
-.type-normal { background: #d4edda; color: #155724; }
-.type-risk { background: #fff3cd; color: #856404; }
-.summary-text { color: #1e293b; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.report-attachments { color: #667eea; font-size: 12px; text-align: right; }
+
+/* 操作日志（和管理员端一致） */
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.log-item {
+  background: #f8fbfd;
+  border: 1px solid #e4edf2;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.log-operator {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e3747;
+  white-space: nowrap;
+}
+
+.log-type-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tag-confirm { background: #d4edda; color: #155724; }
+.tag-reject  { background: #fff3cd; color: #856404; }
+.tag-cancel  { background: #e2e3e5; color: #383d41; }
+.tag-upload  { background: #e6e6fa; color: #4b0082; }
+.tag-status  { background: #cce5ff; color: #004085; }
+.tag-default { background: #f0f3f7; color: #5a6c7e; }
+
+.log-status-flow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #4f6f8f;
+}
+
+.log-status {
+  background: #eef2f6;
+  padding: 1px 8px;
+  border-radius: 4px;
+  color: #1e3747;
+  font-weight: 500;
+}
+
+.log-arrow {
+  color: #99aab9;
+  font-weight: 600;
+}
+
+.log-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: #99aab9;
+}
+
+.log-task-info {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #6b859c;
+  padding-left: 2px;
+}
+
+.log-comment {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-radius: 4px;
+  border-left: 3px solid #409eff;
+  font-size: 12px;
+  color: #4a5e71;
+  line-height: 1.5;
+}
+
+.log-loading-more {
+  text-align: center;
+  padding: 12px;
+  color: #409eff;
+  font-size: 12px;
+}
+
+.log-no-more {
+  text-align: center;
+  padding: 12px;
+  color: #99aab9;
+  font-size: 12px;
+}
+
+.log-empty {
+  text-align: center;
+  color: #99aab9;
+  padding: 24px;
+  background: #f8fbfd;
+  border-radius: 6px;
+  border: 1px dashed #d9e2e9;
+  font-size: 13px;
+}
 
 .modal-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;

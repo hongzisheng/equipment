@@ -62,37 +62,30 @@
       </div>
 
       <div class="detail-section">
-        <h4>上传图片</h4>
-        <!-- 已有图片预览 -->
-        <div v-if="process.attachment_path" class="image-preview">
-          <el-image
-            :src="process.attachment_path"
-            fit="contain"
-            :preview-src-list="[process.attachment_path]"
-            class="preview-image"
-          />
-        </div>
-        <!-- 上传中状态 -->
-        <div v-if="uploading" class="upload-loading">
+        <h4>现场图片</h4>
+        <!-- 加载中 -->
+        <div v-if="imagesLoading" class="images-loading">
           <el-icon class="is-loading"><Loading /></el-icon>
-          上传中...
+          加载中...
         </div>
-        <!-- 上传区域 -->
-        <div
-          v-if="!uploading"
-          class="upload-trigger"
-          @click="triggerUpload"
-        >
-          <el-icon><Plus /></el-icon>
-          <span>{{ process.attachment_path ? '更换图片' : '点击上传图片' }}</span>
+        <!-- 图片画廊 -->
+        <div v-else-if="workerImages.length > 0" class="images-gallery">
+          <div v-for="(img, idx) in workerImages" :key="idx" class="image-card">
+            <el-image
+              :src="img.url"
+              fit="cover"
+              :preview-src-list="previewSrcList"
+              :initial-index="idx"
+              class="gallery-image"
+            />
+            <div class="image-info">
+              <span class="image-time">{{ img.created_at }}</span>
+              <span v-if="img.description" class="image-desc">{{ img.description }}</span>
+            </div>
+          </div>
         </div>
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".jpg,.jpeg,.png,.gif,.bmp,.webp"
-          style="display: none"
-          @change="handleUpload"
-        />
+        <!-- 空状态 -->
+        <div v-else class="images-empty">暂无工人上传图片</div>
       </div>
 
       <!-- 操作日志 -->
@@ -103,6 +96,7 @@
         <div v-else class="log-list">
           <div v-for="log in operationLogs" :key="log.id" class="log-item">
             <div class="log-header">
+              <span v-if="log.user_id" class="log-operator">{{ log.user_id }}</span>
               <span :class="['log-type-tag', getLogTypeClass(log.operation_type)]">
                 {{ getOperationTypeLabel(log.operation_type) }}
               </span>
@@ -201,7 +195,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Checked, Close, Plus, Loading } from '@element-plus/icons-vue'
+import { Checked, Close, Loading } from '@element-plus/icons-vue'
 import ProcessStatusTag from './ProcessStatusTag.vue'
 import ProcessTimeline from './ProcessTimeline.vue'
 import { formatTime, formatWorkers, getOpinionPlaceholder, TERMINAL_STATUSES, NON_REJECTABLE_STATUSES, TASK_STATUS } from '../utils'
@@ -222,17 +216,20 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['close', 'confirm', 'reject', 'view-node', 'image-uploaded'])
+const emit = defineEmits(['close', 'confirm', 'reject', 'view-node'])
 
 const opinionText = ref('')
 const confirmLoading = ref(false)
 const rejectLoading = ref(false)
-const uploading = ref(false)
-const fileInputRef = ref(null)
 
 // 操作日志
 const operationLogs = ref([])
 const logsLoading = ref(false)
+
+// 工人上传图片
+const workerImages = ref([])
+const imagesLoading = ref(false)
+const previewSrcList = computed(() => workerImages.value.map(img => img.url))
 
 const OPERATION_TYPE_MAP = {
   'confirm': '确认通过',
@@ -300,10 +297,24 @@ async function fetchOperationLogs() {
   }
 }
 
-// 弹窗打开时自动加载日志
+async function fetchWorkerImages() {
+  if (!props.process?.id) return
+  imagesLoading.value = true
+  try {
+    const res = await request.get(`/api/work-order-tasks/${props.process.id}/worker-images`)
+    workerImages.value = res.success ? res.data : []
+  } catch (e) {
+    workerImages.value = []
+  } finally {
+    imagesLoading.value = false
+  }
+}
+
+// 弹窗打开时自动加载日志和工人图片
 watch(() => props.visible, (visible) => {
   if (visible && props.process?.id) {
     fetchOperationLogs()
+    fetchWorkerImages()
   }
 })
 
@@ -377,54 +388,6 @@ function handleReject() {
   })
 }
 
-function triggerUpload() {
-  fileInputRef.value && fileInputRef.value.click()
-}
-
-async function handleUpload(event) {
-  const file = event.target.files[0]
-  if (!file) return
-
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp']
-  if (!allowedTypes.includes(file.type)) {
-    ElMessage.error('请上传图片文件（jpg/png/gif/bmp/webp）')
-    event.target.value = ''
-    return
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.error('图片大小不能超过 10MB')
-    event.target.value = ''
-    return
-  }
-
-  uploading.value = true
-  try {
-    const formData = new FormData()
-    formData.append('image', file)
-
-    const response = await request.post(
-      `/api/work-order-tasks/${props.process.id}/upload-image`,
-      formData
-    )
-
-    if (response.success) {
-      props.process.attachment_path = response.data.attachment_path
-      ElMessage.success('图片上传成功')
-      emit('image-uploaded', {
-        processId: props.process.id,
-        attachmentPath: response.data.attachment_path,
-      })
-    } else {
-      ElMessage.error(response.message || '上传失败')
-    }
-  } catch (error) {
-    console.error('上传图片失败:', error)
-    ElMessage.error('上传失败，请稍后重试')
-  } finally {
-    uploading.value = false
-    event.target.value = ''
-  }
-}
 </script>
 
 <style scoped>
@@ -514,24 +477,8 @@ async function handleUpload(event) {
   border-left: 3px solid #f56c6c;
 }
 
-.image-preview {
-  display: flex;
-  justify-content: center;
-  background: #fafafa;
-  border-radius: 6px;
-  padding: 12px;
-  border: 1px solid #e4edf2;
-  margin-bottom: 10px;
-}
-
-.preview-image {
-  max-width: 100%;
-  max-height: 300px;
-  object-fit: contain;
-  border-radius: 4px;
-}
-
-.upload-loading {
+/* 工人上传图片画廊 */
+.images-loading {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -544,25 +491,61 @@ async function handleUpload(event) {
   font-size: 13px;
 }
 
-.upload-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px;
-  background: #f8fbfd;
-  border-radius: 6px;
-  border: 2px dashed #c0cdd9;
-  color: #6b859c;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
+.images-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
 }
 
-.upload-trigger:hover {
-  border-color: #409eff;
-  color: #409eff;
-  background: #f0f7ff;
+.image-card {
+  border: 1px solid #e4edf2;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+
+.image-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.gallery-image {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.image-info {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.image-time {
+  font-size: 11px;
+  color: #99aab9;
+}
+
+.image-desc {
+  font-size: 12px;
+  color: #4a5e71;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.images-empty {
+  text-align: center;
+  padding: 24px;
+  background: #f8fbfd;
+  border-radius: 6px;
+  border: 1px dashed #d9e2e9;
+  color: #99aab9;
+  font-size: 13px;
 }
 
 /* 操作日志 */
@@ -601,6 +584,13 @@ async function handleUpload(event) {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.log-operator {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e3747;
+  white-space: nowrap;
 }
 
 .log-type-tag {

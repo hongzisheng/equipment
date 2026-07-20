@@ -42,11 +42,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Checked } from '@element-plus/icons-vue'
+import { useUserStore } from '@/stores/user'
 import ProcessFilter from './components/ProcessFilter.vue'
 import ProcessTable from './components/ProcessTable.vue'
 import ProcessDetail from './components/ProcessDetail.vue'
 import { getProcessList, getEquipmentInfo, updateProcess, cancelProcess } from '@/api/processApi'
 import { parseTimeToMinutes, TASK_STATUS } from './utils'
+
+const userStore = useUserStore()
 
 const processes = ref([])
 const equipmentInfo = ref({ categories: [], types: {}, instances: {} })
@@ -168,7 +171,8 @@ const confirmProcessStatus = async (processId, action, comments = '') => {
     await updateProcess({
       id: processId,
       action: action,
-      approval_comments: comments
+      approval_comments: comments,
+      operator_name: userStore.name
     })
     await fetchProcesses()
     ElMessage.success(action === 'confirm' ? '已确认，进入下一状态' : '已驳回，退回上一状态')
@@ -181,7 +185,8 @@ const cancelProcessStatus = async (processId) => {
   try {
     await cancelProcess({
       id: processId,
-      approval_comments: '管理员取消'
+      approval_comments: '管理员取消',
+      operator_name: userStore.name
     })
     await fetchProcesses()
     ElMessage.warning('流程已取消')

@@ -94,34 +94,47 @@ def get_worker_workorders(emp_id: str):
 
 
 # ============================================================
-# GET /api/worker/<emp_id>/history
-# 获取员工的历史操作记录
+# GET /api/worker/recent-operations?limit=10&offset=0
+# 获取最近操作记录（分页），员工端"最近上报"使用
 # ============================================================
-@staff_bp.route("/worker/<emp_id>/history", methods=["GET"])
-def get_worker_history(emp_id: str):
-    """获取所有操作历史记录（员工端统一账号，可查看全部历史）"""
+@staff_bp.route("/worker/recent-operations", methods=["GET"])
+def get_recent_operations():
+    """获取最近操作记录，支持分页"""
+    limit = request.args.get("limit", 10, type=int)
+    offset = request.args.get("offset", 0, type=int)
+
     with get_db_connection(sqlite3.Row) as conn:
+        # 查询总数
+        total_row = conn.execute(
+            "SELECT COUNT(*) FROM task_operation_logs"
+        ).fetchone()
+        total = total_row[0] if total_row else 0
+
         rows = conn.execute(
             """
             SELECT
-                id,
-                task_id,
-                user_id,
-                operation_type,
-                description,
-                attachment_path,
-                old_status,
-                new_status,
-                approval_comments,
-                created_at
-            FROM task_operation_logs
-            ORDER BY created_at DESC
-            LIMIT 50
-            """
+                tol.id,
+                tol.task_id,
+                tol.user_id,
+                tol.operation_type,
+                tol.description,
+                tol.attachment_path,
+                tol.old_status,
+                tol.new_status,
+                tol.approval_comments,
+                tol.created_at,
+                wot.process_name,
+                wot.equipment_name
+            FROM task_operation_logs tol
+            LEFT JOIN work_order_tasks wot ON tol.task_id = wot.id
+            ORDER BY tol.created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
         ).fetchall()
 
-        data = [dict(r) for r in rows]
-        return Result.success(data=data)
+        items = [dict(r) for r in rows]
+        return Result.success(data={"items": items, "total": total})
 
 
 # ============================================================

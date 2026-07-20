@@ -515,11 +515,42 @@ _REJECT_TARGET = {
 
 @workorder_mgmt_bp.route("/work-order-tasks/<int:task_id>/update-status", methods=["PUT", "POST"])
 def update_work_order_task_status(task_id):
-    """推进或驳回工单任务状态（简化版，不校验用户角色）"""
+    """推进或驳回工单任务状态
+
+    同时支持 JSON 请求（管理员端）和 multipart/form-data 请求（员工端带图片上传）。
+    """
     try:
-        data = request.get_json(silent=True) or {}
-        action = data.get("action", "confirm")  # confirm | reject
-        approval_comments = data.get("approval_comments", "")
+        # 判断请求类型：multipart/form-data（员工端）还是 JSON（管理员端）
+        is_multipart = request.content_type and "multipart/form-data" in request.content_type
+
+        if is_multipart:
+            # 员工端：从 FormData 中读取参数
+            description = (request.form.get("description") or "").strip()
+            action = request.form.get("action", "confirm")
+            approval_comments = description  # 工况描述作为审批备注
+            uploaded_files = request.files.getlist("photo")
+            operator_name = request.form.get("operator_name", None)
+        else:
+            # 管理员端：JSON 请求
+            data = request.get_json(silent=True) or {}
+            action = data.get("action", "confirm")
+            approval_comments = data.get("approval_comments", "")
+            uploaded_files = []
+            operator_name = data.get("operator_name", None)
+
+        # 保存上传的文件
+        saved_paths = []
+        for f in uploaded_files:
+            if f and f.filename:
+                upload_dir = os.path.join(current_app.root_path, "..", "uploads", "work_reports")
+                os.makedirs(upload_dir, exist_ok=True)
+                ext = os.path.splitext(f.filename)[1] or ".jpg"
+                saved_name = f"{uuid.uuid4().hex}{ext}"
+                saved_path = os.path.join(upload_dir, saved_name)
+                f.save(saved_path)
+                saved_paths.append(saved_path)
+
+        attachment_path = ";".join(saved_paths) if saved_paths else None
 
         with get_db_connection() as conn:
             c = conn.cursor()
@@ -562,13 +593,17 @@ def update_work_order_task_status(task_id):
             )
             conn.commit()
 
-            # 写入操作日志
+            # 写入操作日志（包含图片路径和操作人）
             operation_type = "approval_confirm" if action == "confirm" else "approval_reject"
             c.execute(
                 """INSERT INTO task_operation_logs
-                   (task_id, operation_type, old_status, new_status, approval_comments)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (task_id, operation_type, current_status, target_status, approval_comments),
+                   (task_id, user_id, operation_type, description, attachment_path,
+                    old_status, new_status, approval_comments, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))""",
+                (task_id, operator_name, operation_type,
+                 approval_comments if is_multipart else None,
+                 attachment_path,
+                 current_status, target_status, approval_comments),
             )
             conn.commit()
             return jsonify(
@@ -748,4 +783,54 @@ def upload_task_image(task_id):
 def serve_process_image(filename):
     """提供 process_images 下的静态图片"""
     upload_dir = os.path.join(current_app.root_path, "..", "assets", "process_images")
+    return send_from_directory(upload_dir, filename)
+
+
+@workorder_mgmt_bp.route("/work-order-tasks/<int:task_id>/worker-images", methods=["GET"])
+def get_worker_images(task_id):
+    """获取工人在该任务中上传的所有图片"""
+    try:
+        with get_db_connection(row_factory=sqlite3.Row) as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT id, attachment_path, description, operation_type, created_at
+                FROM task_operation_logs
+                WHERE task_id = ? AND attachment_path IS NOT NULL AND attachment_path != ''
+                ORDER BY created_at DESC
+                """,
+                (task_id,),
+            )
+            rows = c.fetchall()
+
+            images = []
+            for row in rows:
+                raw_paths = row["attachment_path"]
+                if not raw_paths:
+                    continue
+                # 分号分隔的多文件路径
+                for path in raw_paths.split(";"):
+                    path = path.strip()
+                    if not path:
+                        continue
+                    filename = os.path.basename(path)
+                    url = f"/api/uploads/work_reports/{filename}"
+                    images.append({
+                        "url": url,
+                        "filename": filename,
+                        "description": row["description"] or "",
+                        "operation_type": row["operation_type"],
+                        "created_at": row["created_at"],
+                    })
+
+            return jsonify({"success": True, "data": images})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"查询工人图片失败: {str(e)}"}), 500
+
+
+@workorder_mgmt_bp.route("/uploads/work_reports/<path:filename>", methods=["GET"])
+def serve_work_report_image(filename):
+    """提供 work_reports 下的工人上传图片"""
+    upload_dir = os.path.join(current_app.root_path, "..", "uploads", "work_reports")
     return send_from_directory(upload_dir, filename)

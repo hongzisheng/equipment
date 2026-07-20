@@ -25,7 +25,7 @@ class TopologicalScheduler:
         return self.scheduler.schedule_plan
 
     def allocate_process(self, process):
-        """分配工序资源"""
+        """分配工序资源 - 持续向后查找直到找到可用工人"""
         equipment = self.scheduler.get_equipment_by_id(process.equipment_id)
         if not equipment:
             print(f"错误: 找不到设备 {process.equipment_id}")
@@ -33,27 +33,51 @@ class TopologicalScheduler:
         if not self.scheduler.validate_dependencies(process):
             print(f"错误: 工序 {process.id} 的前置工序未完成，无法调度")
             return
+        
         current_start_time = process.earliest_start
-        max_attempts = 30
-        for attempt in range(max_attempts):
-            available_slot = self.scheduler.find_equipment_available_slot(
-                equipment, current_start_time, process.duration
+        max_days = 100
+        
+        best_partial_workers = None
+        best_partial_slot = None
+        
+        for day_offset in range(0, max_days):
+            for half_day_offset in [0, 0.5]:
+                search_time = current_start_time + day_offset + half_day_offset
+                
+                available_slot = self.scheduler.find_equipment_available_slot(
+                    equipment, search_time, process.duration
+                )
+                available_workers, all_met = self.scheduler.find_available_workers(
+                    process.worker_requirements,
+                    available_slot[0],
+                    available_slot[1],
+                    getattr(process, "requires_certification", False),
+                )
+                
+                if available_workers and all_met:
+                    self.scheduler.assign_resources(
+                        process, equipment, available_slot[0], available_workers
+                    )
+                    return
+                
+                if available_workers and not all_met:
+                    if not best_partial_workers or len(available_workers) > len(best_partial_workers):
+                        best_partial_workers = available_workers
+                        best_partial_slot = available_slot
+        
+        if best_partial_workers and best_partial_slot:
+            self.scheduler.assign_resources(process, equipment, best_partial_slot[0], best_partial_workers)
+        else:
+            last_slot = self.scheduler.find_equipment_available_slot(
+                equipment, current_start_time + max_days, process.duration
             )
-            available_workers = self.scheduler.find_available_workers(
+            partial_workers, _ = self.scheduler.find_available_workers(
                 process.worker_requirements,
-                available_slot[0],
-                available_slot[1],
+                last_slot[0],
+                last_slot[1],
                 getattr(process, "requires_certification", False),
             )
-            if available_workers:
-                for worker_type, workers in available_workers.items():
-                    sorted_workers = sorted(workers, key=lambda x: x.skill_level, reverse=True)
-                    available_workers[worker_type] = sorted_workers[: len(workers)]
-                self.scheduler.assign_resources(
-                    process, equipment, available_slot[0], available_workers
-                )
-                return
-        self.handle_resource_conflict(process, equipment)
+            self.scheduler.assign_resources(process, equipment, last_slot[0], partial_workers or {})
 
     def topological_sort(self):
         all_processes = self.scheduler.get_all_processes()
@@ -85,49 +109,7 @@ class TopologicalScheduler:
                     sorted_order.append(process)
         return sorted_order
 
-    def handle_resource_conflict(self, process, equipment):
-        """处理资源冲突 - 向后偏移寻找可用工人"""
-        duration = process.duration
-        base_time = process.earliest_start
-        for offset in [0.5 * i for i in range(1, 20)]:
-            current_time = base_time + offset
-            available_slot = self.scheduler.find_equipment_available_slot(
-                equipment, current_time, duration
-            )
-            available_workers = self.scheduler.find_available_workers(
-                process.worker_requirements,
-                available_slot[0],
-                available_slot[1],
-                getattr(process, "requires_certification", False),
-            )
-            if available_workers:
-                self.scheduler.assign_resources(
-                    process, equipment, available_slot[0], available_workers
-                )
-                return
-        for day_offset in range(1, 20):
-            current_time = base_time + day_offset
-            available_slot = self.scheduler.find_equipment_available_slot(
-                equipment, current_time, duration
-            )
-            available_workers = self.scheduler.find_available_workers(
-                process.worker_requirements,
-                available_slot[0],
-                available_slot[1],
-                getattr(process, "requires_certification", False),
-            )
-            if available_workers:
-                self.scheduler.assign_resources(
-                    process, equipment, available_slot[0], available_workers
-                )
-                return
-        # 最终回退：使用空工人分配
-        if equipment.schedule:
-            equipment.schedule.sort(key=lambda x: x[0])
-            start_time = equipment.schedule[-1][1]
-        else:
-            start_time = process.earliest_start
-        self.scheduler.assign_resources(process, equipment, start_time, {})
+
 
 
 class GreedyScheduler:
@@ -149,24 +131,51 @@ class GreedyScheduler:
         equipment = self.scheduler.get_equipment_by_id(process.equipment_id)
         if not equipment:
             return
+        
         current_start_time = process.earliest_start
-        for attempt in range(30):
-            available_slot = self.scheduler.find_equipment_available_slot(
-                equipment, current_start_time, process.duration
+        max_days = 100
+        
+        best_partial_workers = None
+        best_partial_slot = None
+        
+        for day_offset in range(0, max_days):
+            for half_day_offset in [0, 0.5]:
+                search_time = current_start_time + day_offset + half_day_offset
+                
+                available_slot = self.scheduler.find_equipment_available_slot(
+                    equipment, search_time, process.duration
+                )
+                available_workers, all_met = self.scheduler.find_available_workers(
+                    process.worker_requirements,
+                    available_slot[0],
+                    available_slot[1],
+                    getattr(process, "requires_certification", False),
+                )
+                
+                if available_workers and all_met:
+                    self.scheduler.assign_resources(
+                        process, equipment, available_slot[0], available_workers
+                    )
+                    return
+                
+                if available_workers and not all_met:
+                    if not best_partial_workers or len(available_workers) > len(best_partial_workers):
+                        best_partial_workers = available_workers
+                        best_partial_slot = available_slot
+        
+        if best_partial_workers and best_partial_slot:
+            self.scheduler.assign_resources(process, equipment, best_partial_slot[0], best_partial_workers)
+        else:
+            last_slot = self.scheduler.find_equipment_available_slot(
+                equipment, current_start_time + max_days, process.duration
             )
-            available_workers = self.scheduler.find_available_workers(
+            partial_workers, _ = self.scheduler.find_available_workers(
                 process.worker_requirements,
-                available_slot[0],
-                available_slot[1],
+                last_slot[0],
+                last_slot[1],
                 getattr(process, "requires_certification", False),
             )
-            if available_workers:
-                self.scheduler.assign_resources(
-                    process, equipment, available_slot[0], available_workers
-                )
-                return
-            current_start_time = available_slot[1]
-        self.scheduler.assign_resources(process, equipment, current_start_time, {})
+            self.scheduler.assign_resources(process, equipment, last_slot[0], partial_workers or {})
 
 
 class GeneticScheduler:
@@ -202,21 +211,48 @@ class ShortestProcessingTimeScheduler:
         equipment = self.scheduler.get_equipment_by_id(process.equipment_id)
         if not equipment:
             return
+        
         current_start_time = process.earliest_start
-        for attempt in range(30):
-            available_slot = self.scheduler.find_equipment_available_slot(
-                equipment, current_start_time, process.duration
+        max_days = 100
+        
+        best_partial_workers = None
+        best_partial_slot = None
+        
+        for day_offset in range(0, max_days):
+            for half_day_offset in [0, 0.5]:
+                search_time = current_start_time + day_offset + half_day_offset
+                
+                available_slot = self.scheduler.find_equipment_available_slot(
+                    equipment, search_time, process.duration
+                )
+                available_workers, all_met = self.scheduler.find_available_workers(
+                    process.worker_requirements,
+                    available_slot[0],
+                    available_slot[1],
+                    getattr(process, "requires_certification", False),
+                )
+                
+                if available_workers and all_met:
+                    self.scheduler.assign_resources(
+                        process, equipment, available_slot[0], available_workers
+                    )
+                    return
+                
+                if available_workers and not all_met:
+                    if not best_partial_workers or len(available_workers) > len(best_partial_workers):
+                        best_partial_workers = available_workers
+                        best_partial_slot = available_slot
+        
+        if best_partial_workers and best_partial_slot:
+            self.scheduler.assign_resources(process, equipment, best_partial_slot[0], best_partial_workers)
+        else:
+            last_slot = self.scheduler.find_equipment_available_slot(
+                equipment, current_start_time + max_days, process.duration
             )
-            available_workers = self.scheduler.find_available_workers(
+            partial_workers, _ = self.scheduler.find_available_workers(
                 process.worker_requirements,
-                available_slot[0],
-                available_slot[1],
+                last_slot[0],
+                last_slot[1],
                 getattr(process, "requires_certification", False),
             )
-            if available_workers:
-                self.scheduler.assign_resources(
-                    process, equipment, available_slot[0], available_workers
-                )
-                return
-            current_start_time = available_slot[1]
-        self.scheduler.assign_resources(process, equipment, current_start_time, {})
+            self.scheduler.assign_resources(process, equipment, last_slot[0], partial_workers or {})

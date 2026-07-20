@@ -75,11 +75,13 @@
 
           <el-row :gutter="24">
             <el-col :span="12">
-              <el-form-item label="计划开始时间">
-                <el-input
-                  :value="autoPlannedStartTime"
-                  readonly
-                  placeholder="选择工单后自动计算"
+              <el-form-item label="计划开始时间" prop="planned_start_time">
+                <el-date-picker
+                  v-model="form.planned_start_time"
+                  type="datetime"
+                  placeholder="选择计划开始时间"
+                  format="YYYY-MM-DD HH:mm:ss"
+                  value-format="YYYY-MM-DD HH:mm:ss"
                   style="width: 100%"
                 />
               </el-form-item>
@@ -98,33 +100,6 @@
 
           <el-row :gutter="24">
             <el-col :span="12">
-              <el-form-item label="实际开始时间">
-                <el-date-picker
-                  v-model="form.actual_start_time"
-                  type="datetime"
-                  placeholder="选择实际开始时间（可选）"
-                  format="YYYY-MM-DD HH:mm:ss"
-                  value-format="YYYY-MM-DD HH:mm:ss"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="实际结束时间">
-                <el-date-picker
-                  v-model="form.actual_end_time"
-                  type="datetime"
-                  placeholder="选择实际结束时间（可选）"
-                  format="YYYY-MM-DD HH:mm:ss"
-                  value-format="YYYY-MM-DD HH:mm:ss"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-
-          <el-row :gutter="24">
-            <el-col :span="12">
               <el-form-item label="计划人工时(h)">
                 <el-input
                   :value="totalPlannedManHours"
@@ -135,38 +110,11 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="实际人工时(h)">
-                <el-input-number
-                  v-model="form.actual_man_hours"
-                  :min="0"
-                  :step="0.5"
-                  :precision="1"
-                  placeholder="实际人工时"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-
-          <el-row :gutter="24">
-            <el-col :span="12">
               <el-form-item label="计划成本(元)">
                 <el-input
                   :value="totalPlannedCost"
                   readonly
                   placeholder="选择工单后自动计算"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="实际成本(元)">
-                <el-input-number
-                  v-model="form.actual_cost"
-                  :min="0"
-                  :step="100"
-                  :precision="2"
-                  placeholder="实际成本"
                   style="width: 100%"
                 />
               </el-form-item>
@@ -212,10 +160,14 @@
               <el-table-column prop="equipment_name" label="设备名称" min-width="130" show-overflow-tooltip />
               <el-table-column prop="status" label="状态" min-width="80" align="center">
                 <template #default="{ row }">
-                  <el-tag size="small">{{ row.status }}</el-tag>
+                  <el-tag size="small">{{ statusMap[row.status] || row.status }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="priority" label="优先级" min-width="80" align="center" />
+              <el-table-column prop="priority" label="优先级" min-width="80" align="center">
+                <template #default="{ row }">
+                  {{ priorityMap[row.priority] || row.priority }}
+                </template>
+              </el-table-column>
               <el-table-column prop="created_at" label="创建时间" min-width="140" align="center" />
             </el-table>
 
@@ -287,6 +239,22 @@ const rules = {
   status: [{ required: true, message: '请选择计划状态', trigger: 'change' }],
 }
 
+const statusMap = {
+  pending: '待处理',
+  processing: '进行中',
+  completed: '已完成',
+  closed: '已关闭',
+  released: '已下发',
+  scheduled: '已排程',
+  equipment_closed: '设备已关闭',
+}
+
+const priorityMap = {
+  high: '高',
+  medium: '中',
+  low: '低',
+}
+
 // 未计划工单
 const unplannedOrders = ref([])
 const woSearchKeyword = ref('')
@@ -314,15 +282,6 @@ const totalPlannedCost = computed(() => {
   return selectedWorkOrders.value.reduce((sum, wo) => {
     return sum + (wo.estimated_cost || 0)
   }, 0).toFixed(2)
-})
-
-const autoPlannedStartTime = computed(() => {
-  if (selectedWorkOrders.value.length === 0) return ''
-  const times = selectedWorkOrders.value
-    .map((wo) => wo.scheduled_start_time)
-    .filter(Boolean)
-  if (times.length === 0) return '选中工单均未设置时间'
-  return [...times].sort()[0]
 })
 
 const autoPlannedEndTime = computed(() => {

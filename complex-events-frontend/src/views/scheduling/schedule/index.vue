@@ -14,14 +14,7 @@
           <div class="section-title" ><img src="/src/assets/iconfont/算法选择.png" alt="算法选择" class="panel-icon mr6" />模型选择 </div>
           </div>
          
-          <!-- 调度模式切换：按工单 / 按检修计划 -->
-          <div class="schedule-mode-bar">
-            <span class="mode-label">调度模式：</span>
-            <el-radio-group v-model="scheduleMode" @change="onScheduleModeChange">
-              <el-radio value="workorder">按工单</el-radio>
-              <el-radio value="plan">按检修计划</el-radio>
-            </el-radio-group>
-          </div>
+
           <div class="algorithm-target-selection">
             <!-- 按工单模式：选择工单 -->
             <el-select
@@ -54,9 +47,9 @@
               @click="runSchedule">生成调度</el-button>
 
             <el-button type="success" @click="savePlan" :loading="saving" class="save-btn">保存方案</el-button>
-            <!-- 方案历史按钮：仅按检修计划模式且已选计划时显示 -->
+            <!-- 方案历史按钮：已选计划时显示 -->
             <el-button
-              v-if="scheduleMode === 'plan' && selectedPlanId"
+              v-if="selectedPlanId"
               type="info"
               @click="openPlanHistory"
               :loading="loadingPlanHistory"
@@ -567,8 +560,6 @@ const pageSize = ref(10)
 const projectStartDatetime = ref(null)
 // 新增：
 const loadingPlans = ref(false) // 计划加载状态
-const workOrders = ref([]) // 工单列表
-const loadingWorkOrders = ref(false) // 工单加载状态
 const workerBusyMap = ref(new Map())
 const workerPool = ref([]) // 工人池数据
 const editWorkerDialogVisible = ref(false)
@@ -579,7 +570,7 @@ const editingWorkers = ref({})
 const saving = ref(false)
 
 // ====== 按检修计划模式相关状态 ======
-const scheduleMode = ref('workorder')          // 调度模式：'workorder' | 'plan'
+const scheduleMode = ref('plan')          // 调度模式：仅按检修计划
 const maintenancePlans = ref([])                // 检修计划列表
 const selectedPlanId = ref(null)                // 选中的检修计划ID
 const currentSchedulePlanId = ref(null)         // 当前生成的调度方案ID
@@ -599,22 +590,7 @@ const diffFilter = ref('changed')                // 差异筛选：all/changed/a
 
 async function savePlan() {
   // 按检修计划模式：方案在生成调度时已自动保存为新方案，无需再保存
-  if (scheduleMode.value === 'plan') {
-    ElMessage.info('方案已随生成调度时自动保存')
-    return
-  }
-  saving.value = true
-  try {
-    await new Promise((r) => setTimeout(r, 600))
-    ElMessage.success('方案已保存')
-
-    // 保存完成后自动导出Excel文件
-    exportAssignmentToExcel()
-  } catch {
-    ElMessage.error('保存失败')
-  } finally {
-    saving.value = false
-  }
+  ElMessage.info('方案已随生成调度时自动保存')
 }
 async function fetchPlans() {
   loadingPlans.value = true
@@ -661,23 +637,6 @@ async function fetchMaintenancePlans() {
   } finally {
     loadingPlans.value = false
   }
-}
-
-// 调度模式切换处理
-function onScheduleModeChange(val) {
-  // 切换到按检修计划模式时，若尚未加载检修计划则触发加载
-  if (val === 'plan' && maintenancePlans.value.length === 0) {
-    fetchMaintenancePlans()
-  }
-  // 切换模式时清空另一种模式的选择，避免数据混淆
-  if (val === 'workorder') {
-    selectedPlanId.value = null
-  } else {
-    selectedWorkOrders.value = []
-  }
-  // 清空当前方案信息
-  currentSchedulePlanId.value = null
-  currentScheduleName.value = ''
 }
 
 // 检修计划选择变化处理

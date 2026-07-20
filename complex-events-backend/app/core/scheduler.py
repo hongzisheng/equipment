@@ -213,11 +213,13 @@ class Scheduler(IScheduler):
         return True
 
     def find_available_workers(self, worker_requirements, start_time, end_time, requires_certification=False):
-        """查找可用的工人"""
+        """查找可用的工人 - 返回尽可能多的可用工人"""
         available_workers = {}
+        all_requirements_met = True
         for worker_type, count_needed in worker_requirements.items():
             if worker_type not in self.worker_pool:
-                return None
+                all_requirements_met = False
+                continue
             workers_of_type = self.worker_pool[worker_type]
             available_of_type = []
             for worker in workers_of_type:
@@ -225,11 +227,12 @@ class Scheduler(IScheduler):
                     if requires_certification and worker.id not in self.certified_workers:
                         continue
                     available_of_type.append(worker)
-            if len(available_of_type) < count_needed:
-                return None
             available_of_type.sort(key=lambda w: w.skill_level, reverse=True)
-            available_workers[worker_type] = available_of_type[:count_needed]
-        return available_workers
+            if available_of_type:
+                available_workers[worker_type] = available_of_type[:count_needed]
+            if len(available_of_type) < count_needed:
+                all_requirements_met = False
+        return available_workers if available_workers else None, all_requirements_met
 
     def find_equipment_available_slot(self, equipment, start_time, duration_days):
         """查找设备的可用时间段"""
@@ -582,6 +585,8 @@ class Scheduler(IScheduler):
                 conn.close()
                 return None, None, False, "检修计划不存在"
             
+            plan_name = plan[1]
+            
             # 查询该计划关联的所有工单ID
             c.execute("SELECT id FROM work_orders WHERE plan_id = ?", (plan_id,))
             work_order_ids = [row[0] for row in c.fetchall()]
@@ -595,19 +600,47 @@ class Scheduler(IScheduler):
             # 调用现有的工单调度方法
             result = self.schedule_from_work_orders(work_order_ids, algorithm_name)
             
-            # 如果调度成功，更新检修计划的 schedule_plan_id
+            # 如果调度成功，向 schedule_plans 表插入记录
             if result and isinstance(result, dict) and result.get("success"):
                 conn = sqlite3.connect(str(db_path))
                 c = conn.cursor()
-                import time
-                schedule_plan_id = int(time.time())
+                
+                # 向 schedule_plans 表插入新方案记录
+                schedule_name = f"{plan_name} - {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
+                c.execute(
+                    """INSERT INTO schedule_plans
+                       (plan_id, schedule_name, algorithm, status, work_order_ids,
+                        project_start_datetime, statistics, total_tasks)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        plan_id,
+                        schedule_name,
+                        algorithm_name,
+                        '生效中',
+                        json.dumps(work_order_ids),
+                        result.get('project_start_datetime'),
+                        json.dumps(result.get('statistics', {})),
+                        len(result.get('schedule_plan', [])),
+                    ),
+                )
+                inserted_id = c.lastrowid
+                
+                # 更新检修计划的 schedule_plan_id
                 c.execute(
                     "UPDATE maintenance_plans SET schedule_plan_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (schedule_plan_id, plan_id)
+                    (inserted_id, plan_id)
                 )
+                
+                # 归档同计划下其他生效方案
+                c.execute(
+                    "UPDATE schedule_plans SET status = '已归档' WHERE plan_id = ? AND id != ? AND status = '生效中'",
+                    (plan_id, inserted_id)
+                )
+                
                 conn.commit()
                 conn.close()
-                result["schedule_plan_id"] = schedule_plan_id
+                
+                result["schedule_plan_id"] = inserted_id
                 result["plan_id"] = plan_id
             
             return result

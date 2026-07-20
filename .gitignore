@@ -236,7 +236,7 @@ local_settings.py
 *.backup_*
 # 迁移源数据库（仅用于一次性数据迁移，不需要推送）
 db(5).sqlite3
-
+db.sqlite3
 # Flask stuff:
 instance/
 .webassets-cache

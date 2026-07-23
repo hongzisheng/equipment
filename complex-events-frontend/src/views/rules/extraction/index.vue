@@ -142,15 +142,15 @@
             </div>
             <div class="pdf-view" ref="pdfContainer">
               <div class="pdf-scroll">
-                <div v-if="!pdfDoc && !pdfLoading" class="empty-preview">
-                  <el-icon class="doc-icon"><Document /></el-icon>
-                  <div class="empty-text">请上传 PDF 文件以预览</div>
-                </div>
-                <div v-else-if="pdfLoading" class="loading-preview">
+                <div v-if="pdfLoading" class="loading-preview">
                   <el-icon class="is-loading"><Loading /></el-icon>
                   <span>加载中...</span>
                 </div>
-                <canvas id="pdf-canvas" v-show="pdfDoc"></canvas>
+                <div v-else-if="!pdfDoc && !pdfLoading" class="empty-preview">
+                  <el-icon class="doc-icon"><Document /></el-icon>
+                  <div class="empty-text">请上传 PDF 文件以预览</div>
+                </div>
+                <canvas id="pdf-canvas" v-show="!pdfLoading && pdfDoc"></canvas>
               </div>
             </div>
             <div class="pdf-footer">
@@ -272,13 +272,7 @@ import {
 } from '@element-plus/icons-vue'
 import * as pdfjsLib from 'pdfjs-dist'
 
-// ✅ 修正为 .mjs 后缀（5.x 版本的正确 worker 文件）
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
-// ✅ CMaps 参数传给 getDocument，避免全局设置报错
-const pdfCmapOptions = {
-  cMapUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
-  cMapPacked: true,
-}
 
 // 后端接口地址（需根据实际部署调整）
 const API_BASE = '/api'
@@ -300,7 +294,7 @@ const dialogTitle = computed(() => {
   return `选择${selectedCategory.value}文件`
 })
 
-// ========== PDF 预览相关 ==========
+// ========== PDF 预览相关（与文件管理页完全一致，pdfDoc 用普通变量） ==========
 let pdfDoc = null
 const pdfLoading = ref(false)
 const currentPageNum = ref(1)
@@ -373,7 +367,7 @@ function confirmMgmtSelection() {
     }
   }
   showFilePicker.value = false
-  // 自动预览第一个 PDF
+  // 自动预览第一个 PDF（只在首次选择时加载）
   if (selectedFiles.value.length && !pdfDoc) {
     loadPdfForPreview(`${API_BASE}/pdf/${selectedFiles.value[0].file_id}`)
   }
@@ -571,24 +565,16 @@ async function loadPdfForPreview(url) {
 
   try {
     const response = await fetch(url)
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-    const arrayBuffer = await response.arrayBuffer()
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, ...pdfCmapOptions })
+    const data = await response.arrayBuffer()
+    const loadingTask = pdfjsLib.getDocument({ data })
     pdfDoc = await loadingTask.promise
-    pdfDoc.url = url
     totalPages.value = pdfDoc.numPages
     currentPageNum.value = 1
     await renderPage(1)
   } catch (err) {
     console.error('PDF 加载失败', err)
-    if (err.message.includes('Failed to fetch') || err.name === 'TypeError') {
-      ElMessage.error('PDF 加载失败：网络错误或跨域限制，请确认后端已开启 CORS 或部署同源')
-    } else if (err.message.includes('Invalid PDF')) {
-      ElMessage.error('PDF 文件无效或已损坏')
-    } else {
-      ElMessage.error('PDF 加载失败，请检查控制台')
-    }
     pdfDoc = null
   } finally {
     pdfLoading.value = false
@@ -718,6 +704,14 @@ async function startExtraction() {
     await loadQuotaData()
     if (successCount > 0) {
       ElMessage.success(`知识提取完成，成功处理 ${successCount} 个文件`)
+      // 提取完成后重新加载第一个文件的 PDF 预览
+      if (selectedFiles.value.length) {
+        await loadPdfForPreview(`${API_BASE}/pdf/${selectedFiles.value[0].file_id}`)
+      }
+      // 滚动到结果表格区域，让用户看到提取结果
+      setTimeout(() => {
+        document.querySelector('.result-card')?.scrollIntoView({ behavior: 'smooth' })
+      }, 200)
     }
   } catch (err) {
     ElMessage.error(`提取失败：${err.message}`)

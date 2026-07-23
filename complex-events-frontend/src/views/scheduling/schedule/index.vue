@@ -599,7 +599,7 @@
             <el-select
               v-model="editingWorkers[trade]"
               filterable
-              placeholder="请选择工人"
+              :placeholder="getCurrentWorkerNamesForTrade(trade) || '请选择工人'"
               style="width: 100%"
             >
               <el-option
@@ -1282,6 +1282,15 @@ function openEditWorkers(row) {
   }
   editingWorkers.value = initialEdit;
   editWorkerDialogVisible.value = true;
+}
+
+function getCurrentWorkerNamesForTrade(trade) {
+  if (!currentEditingTask.value) return '';
+  const workers = currentEditingTask.value.workers || {};
+  const names = workers[trade];
+  if (!names) return '';
+  const nameArray = Array.isArray(names) ? names : [names];
+  return nameArray.join('、');
 }
 
 // 检测当前编辑的工人是否与原任务有变化

@@ -44,8 +44,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 QUOTA_FOLDER = PROJECT_ROOT / 'assets' / 'quotafile'
 PROCEDURE_FOLDER = PROJECT_ROOT / 'assets' / 'procedurefile'
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'txt'}
-
+FAULT_FOLDER = PROJECT_ROOT / 'assets' / 'faultfile'
 QUOTA_FOLDER.mkdir(parents=True, exist_ok=True)
+FAULT_FOLDER.mkdir(parents=True, exist_ok=True)
 PROCEDURE_FOLDER.mkdir(parents=True, exist_ok=True)
 
 def allowed_file(filename):
@@ -64,8 +65,8 @@ def upload_file():
 
     # 获取分类参数（前端通过表单字段传递）
     category = request.form.get('category', '未分类')
-    if category not in ['定额', '规程']:
-        return jsonify({'success': False, 'message': '分类必须为 "定额" 或 "规程"'}), 400
+    if category not in ['定额', '规程', '故障']:
+        return jsonify({'success': False, 'message': '分类必须为 "定额"、"规程" 或 "故障"'}), 400
 
     # 获取原始文件名，优先使用前端传递的 original_name
     original_name = request.form.get('original_name', file.filename)
@@ -80,7 +81,8 @@ def upload_file():
         ext = raw_name.rsplit('.', 1)[-1].lower() if '.' in raw_name else ''
         safe_filename = f"file.{ext}" if ext else 'file'
     saved_filename = safe_filename
-    target_folder = QUOTA_FOLDER if category == '定额' else PROCEDURE_FOLDER
+    folder_map = {'定额': QUOTA_FOLDER, '规程': PROCEDURE_FOLDER, '故障': FAULT_FOLDER}
+    target_folder = folder_map[category]
     filepath = target_folder / saved_filename
 
     # 检测重名：文件已存在时，若前端未要求覆盖则返回冲突
@@ -222,6 +224,28 @@ def get_pdf(file_id):
     response = make_response(send_file(file_path, mimetype='application/pdf'))
     return response
 
+@file_bp.route('/files/<file_id>/download', methods=['GET'])
+def download_file(file_id):
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT saved_path, original_name FROM uploaded_files WHERE id = ?', (file_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    file_path = row['saved_path']
+    if not os.path.exists(file_path):
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=row['original_name']
+    )
 
 @file_bp.route('/files/<file_id>', methods=['DELETE'])
 def delete_file(file_id):
@@ -336,3 +360,53 @@ def list_files():
         result.append(item)
 
     return jsonify({'success': True, 'data': result})
+
+
+#文件类型切换服务
+@file_bp.route('/files/<file_id>/category', methods=['POST'])
+def update_file_category(file_id):
+    data = request.get_json()
+    new_category = data.get('category')
+
+    if new_category not in ['定额', '规程', '故障']:
+        return jsonify({'success': False, 'message': '分类必须为"定额"、"规程"或"故障"'}), 400
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT saved_path, original_name, category FROM uploaded_files WHERE id = ?', (file_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    if row['category'] == new_category:
+        conn.close()
+        return jsonify({'success': False, 'message': '分类未发生变化'}), 400
+
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+    folder_map = {
+        '定额': PROJECT_ROOT / 'assets' / 'quotafile',
+        '规程': PROJECT_ROOT / 'assets' / 'procedurefile',
+        '故障': PROJECT_ROOT / 'assets' / 'faultfile',
+    }
+    target_folder = folder_map[new_category]
+    target_folder.mkdir(parents=True, exist_ok=True)
+
+    old_path = Path(row['saved_path'])
+    new_path = target_folder / old_path.name
+
+    if new_path.exists():
+        conn.close()
+        return jsonify({'success': False, 'conflict': True, 'message': f'目标目录已存在同名文件"{old_path.name}"'}), 409
+
+    old_path.rename(new_path)
+
+    cursor.execute('UPDATE uploaded_files SET category = ?, saved_path = ? WHERE id = ?',
+                   (new_category, str(new_path), file_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'message': f'分类已更新为"{new_category}"'})

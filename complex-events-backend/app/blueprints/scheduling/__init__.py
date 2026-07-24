@@ -8,4 +8,5 @@ from . import workorder_blueprint
 from . import maintenance_plan_blueprint
 from .schedule_generate_blueprint import schedule_bp
 from .simulation_blueprint import simulation_bp
+from .agent_scoring_blueprint import agent_scoring_bp
 

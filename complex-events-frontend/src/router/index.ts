@@ -148,6 +148,12 @@ export const constantRoutes: RouteItem[] = [
         component: () => import('@/views/scheduling/simulation/index.vue'),
         meta: { title: '模拟沙盘验证', icon: 'data-analysis' },
       },
+      {
+        path: '/dispatch/agent-scoring',
+        name: '多智能体协同评分',
+        component: () => import('@/views/scheduling/agent-scoring/index.vue'),
+        meta: { title: '多智能体协同评分', icon: 'star' },
+      },
     ],
   },
   {

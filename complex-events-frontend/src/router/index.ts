@@ -142,6 +142,12 @@ export const constantRoutes: RouteItem[] = [
         component: () => import('@/views/scheduling/schedule/index.vue'),
         meta: { title: '调度生成', icon: 'calendar' },
       },
+      {
+        path: '/dispatch/simulation',
+        name: '模拟沙盘验证',
+        component: () => import('@/views/scheduling/simulation/index.vue'),
+        meta: { title: '模拟沙盘验证', icon: 'data-analysis' },
+      },
     ],
   },
   {

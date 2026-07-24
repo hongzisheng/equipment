@@ -10,6 +10,7 @@ from .materials.materials_blueprint import materials_bp
 from .scheduling import worker_bp as scheduling_worker_bp, equipment_bp as scheduling_equipment_bp
 from .scheduling import scheduling_worker_bp, scheduling_equipment_bp, workorder_mgmt_bp
 from .scheduling import schedule_bp
+from .scheduling import simulation_bp
 # maintenance_plan_blueprint 的路由已注册在 workorder_mgmt_bp 上，
 # 通过 scheduling/__init__.py 的 `from . import maintenance_plan_blueprint` 自动加载
 from .rules.rulebase.process_router import process_bp as rules_process_bp
